@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Ghost AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --glass: rgba(9, 9, 14, 0.82);
+      --glass-light: rgba(255,255,255,0.04);
+      --glass-border: rgba(255,255,255,0.08);
+      --text: rgba(255,255,255,0.9);
+      --text-dim: rgba(255,255,255,0.38);
+      --danger: #FF6B6B;
+      --success: #5EF08A;
+      --warning: #FFD166;
+      --accent: #7DF9AA;
+      --accent2: #4FC3F7;
+      --radius: 16px;
+    }
+
+    html, body {
+      background: transparent !important;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      font-family: 'Syne', sans-serif;
+    }
+
+    #app {
+      width: 100%; height: 100vh;
+      background: var(--glass);
+      backdrop-filter: blur(30px) saturate(200%);
+      -webkit-backdrop-filter: blur(30px) saturate(200%);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 0 0 0.5px rgba(255,255,255,0.05), 0 40px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07);
+    }
+
+    /* ── TITLEBAR ── */
+    #titlebar {
+      -webkit-app-region: drag;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 14px 10px;
+      border-bottom: 1px solid var(--glass-border);
+      flex-shrink: 0; user-select: none;
+    }
+    .title-left { display: flex; align-items: center; gap: 9px; }
+    .ghost-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 0 8px var(--accent);
+      animation: blink 2.4s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%,100% { opacity:1; transform:scale(1); }
+      50% { opacity:0.4; transform:scale(0.7); }
+    }
+    .app-title { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: 0.04em; }
+    .app-sub { font-size: 9px; color: var(--text-dim); letter-spacing: 0.12em; text-transform: uppercase; }
+
+    .title-controls { display: flex; gap: 5px; -webkit-app-region: no-drag; align-items: center; }
+    .ctrl-btn {
+      width: 26px; height: 26px; border-radius: 7px;
+      border: 1px solid var(--glass-border); background: var(--glass-light);
+      color: var(--text-dim); font-size: 11px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+    }
+    .ctrl-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+    .ctrl-btn.close-btn:hover { color: var(--danger); border-color: rgba(255,107,107,0.35); }
+
+    /* ── SETUP ── */
+    #setup-panel {
+      padding: 16px 16px 14px;
+      display: flex; flex-direction: column; gap: 12px;
+      overflow-y: auto; flex: 1;
+    }
+    .row { display: flex; flex-direction: column; gap: 5px; }
+    .lbl {
+      font-size: 10px; color: var(--text-dim);
+      letter-spacing: 0.1em; text-transform: uppercase;
+    }
+
+    /* provider dropdown */
+    .provider-select-wrap {
+      position: relative;
+    }
+    .provider-select-wrap::after {
+      content: '';
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      width: 0; height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 5px solid rgba(255,255,255,0.3);
+      pointer-events: none;
+    }
+    .provider-badge {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent); pointer-events: none;
+      transition: background 0.3s;
+    }
+
+    .gi {
+      background: var(--glass-light);
+      border: 1px solid var(--glass-border);
+      border-radius: 9px; padding: 9px 12px;
+      color: var(--text); font-family: 'DM Mono', monospace; font-size: 11.5px;
+      outline: none; width: 100%; transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .gi:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+    }
+    .gi::placeholder { color: var(--text-dim); }
+    select.gi { cursor: pointer; appearance: none; padding-left: 28px; padding-right: 28px; }
+    select.gi option {
+      background: #0f0f14 !important;
+      color: rgba(255, 255, 255, 0.95) !important;
+    }
+
+    .key-help {
+      font-size: 10px; color: var(--text-dim);
+      font-family: 'DM Mono', monospace;
+    }
+
+    .input-with-toggle {
+      position: relative;
+      display: flex;
+      align-items: center;
+      width: 100%;
+    }
+    .input-with-toggle .gi {
+      padding-right: 68px; /* space for copy and eye toggle buttons */
+    }
+    .copy-key-btn, .toggle-password {
+      position: absolute;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: color 0.15s, transform 0.1s;
+      outline: none;
+      width: 20px;
+      height: 20px;
+    }
+    .copy-key-btn {
+      right: 36px;
+    }
+    .toggle-password {
+      right: 12px;
+    }
+    .copy-key-btn:hover, .toggle-password:hover {
+      color: var(--text);
+    }
+    .copy-key-btn:active, .toggle-password:active {
+      transform: scale(0.9);
+    }
+    .copy-key-btn svg, .toggle-password svg {
+      width: 15px;
+      height: 15px;
+    }
+    .toggle-password svg {
+      display: none;
+    }
+    .toggle-password.show-pass .eye-off-icon {
+      display: block;
+    }
+    .toggle-password:not(.show-pass) .eye-icon {
+      display: block;
+    }
+
+    /* ── VALIDATE BUTTON ── */
+    #validate-btn {
+      background: var(--glass-light);
+      border: 1px solid var(--glass-border);
+      border-radius: 9px; padding: 10px 12px;
+      color: var(--text-dim); font-family: 'Syne', sans-serif;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      letter-spacing: 0.04em; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    #validate-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); }
+    #validate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── VALIDATION STEPS ── */
+    #val-steps {
+      display: none;
+      flex-direction: column; gap: 6px;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px; padding: 12px 13px;
+    }
+    .vstep {
+      display: flex; align-items: center; gap: 9px;
+      font-family: 'DM Mono', monospace; font-size: 11px;
+      color: var(--text-dim); transition: color 0.2s;
+    }
+    .vstep-icon {
+      width: 18px; height: 18px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; flex-shrink: 0;
+      border: 1px solid var(--glass-border);
+      background: var(--glass-light);
+      transition: all 0.3s;
+    }
+    .vstep.pending .vstep-icon { color: var(--text-dim); }
+    .vstep.loading .vstep-icon {
+      border-color: var(--accent); color: var(--accent);
+      animation: spin 0.8s linear infinite;
+    }
+    .vstep.loading { color: var(--text); }
+    .vstep.ok .vstep-icon { background: rgba(94,240,138,0.15); border-color: var(--success); color: var(--success); }
+    .vstep.ok { color: var(--text); }
+    .vstep.fail .vstep-icon { background: rgba(255,107,107,0.12); border-color: var(--danger); color: var(--danger); }
+    .vstep.fail { color: var(--danger); }
+    .vstep.skip .vstep-icon { opacity: 0.3; }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); } to { transform: rotate(360deg); }
+    }
+
+    /* error detail box */
+    #val-error {
+      display: none;
+      background: rgba(255,107,107,0.08);
+      border: 1px solid rgba(255,107,107,0.2);
+      border-radius: 9px; padding: 10px 12px;
+      font-family: 'DM Mono', monospace; font-size: 11px;
+      color: rgba(255,150,150,0.9); line-height: 1.6;
+    }
+    #val-error strong { color: var(--danger); display: block; margin-bottom: 3px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+
+    /* ── START BUTTON ── */
+    #start-btn {
+      display: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none; border-radius: 9px; padding: 11px;
+      color: #07070e; font-family: 'Syne', sans-serif;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      letter-spacing: 0.04em; transition: all 0.2s;
+    }
+    #start-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 30%, transparent); }
+    #start-btn.visible { display: block; }
+
+    .key-hint {
+      font-size: 9.5px; color: var(--text-dim);
+      text-align: center; font-family: 'DM Mono', monospace; line-height: 1.9;
+    }
+    .key-hint kbd {
+      background: rgba(255,255,255,0.07); border: 1px solid var(--glass-border);
+      border-radius: 4px; padding: 1px 5px; font-size: 9px; font-family: 'DM Mono', monospace;
+    }
+
+    /* ── CHAT VIEW ── */
+    #chat-view { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+
+    #active-pill {
+      margin: 8px 13px 2px;
+      display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+      background: color-mix(in srgb, var(--accent) 9%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+      border-radius: 20px; padding: 3px 10px;
+      font-family: 'DM Mono', monospace; font-size: 9.5px;
+      color: var(--accent); letter-spacing: 0.05em;
+    }
+    .pdot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+
+    #messages {
+      flex: 1; overflow-y: auto; padding: 8px 13px 4px;
+      display: flex; flex-direction: column; gap: 8px;
+      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.07) transparent;
+    }
+    #messages::-webkit-scrollbar { width: 3px; }
+    #messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 2px; }
+
+    .msg {
+      max-width: 90%; padding: 8px 12px;
+      border-radius: 11px;
+      font-family: 'DM Mono', monospace; font-size: 11.5px; line-height: 1.65;
+      animation: msgIn 0.18s ease-out; white-space: pre-wrap; word-break: break-word;
+    }
+    @keyframes msgIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
+    .msg.user {
+      background: color-mix(in srgb, var(--accent) 11%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+      color: rgba(255,255,255,0.85); align-self: flex-end; border-bottom-right-radius: 3px;
+    }
+    .msg.ai {
+      background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+      color: rgba(255,255,255,0.78); align-self: flex-start; border-bottom-left-radius: 3px;
+      white-space: normal;
+    }
+    .msg.ai p {
+      margin-bottom: 8px;
+    }
+    .msg.ai p:last-child {
+      margin-bottom: 0;
+    }
+    .msg.ai code {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.9em;
+    }
+    .msg.ai pre {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 10px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+    .msg.ai pre code {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+      font-size: 11px;
+    }
+    .msg.ai ul, .msg.ai ol {
+      margin-left: 18px;
+      margin-bottom: 8px;
+    }
+    .msg.ai li {
+      margin-bottom: 4px;
+    }
+    .msg.ai h1, .msg.ai h2, .msg.ai h3, .msg.ai h4 {
+      margin: 12px 0 6px;
+      font-weight: 600;
+    }
+    .msg.ai h1 { font-size: 1.3em; }
+    .msg.ai h2 { font-size: 1.2em; }
+    .msg.ai h3 { font-size: 1.1em; }
+
+    .msg.system {
+      background: transparent; border: 1px dashed rgba(255,255,255,0.07);
+      color: var(--text-dim); align-self: center;
+      font-size: 9.5px; text-align: center; max-width: 100%;
+    }
+    .msg.error {
+      background: rgba(255,107,107,0.08); border: 1px solid rgba(255,107,107,0.2);
+      color: var(--danger); align-self: center; font-size: 11px; max-width: 96%;
+    }
+
+    .thinking {
+      display: flex; gap: 4px; align-items: center; padding: 9px 12px;
+      background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+      border-radius: 11px; border-bottom-left-radius: 3px; align-self: flex-start;
+      animation: msgIn 0.18s ease-out;
+    }
+    .td { width: 5px; height: 5px; background: var(--text-dim); border-radius: 50%; animation: tdB 1.2s ease-in-out infinite; }
+    .td:nth-child(2) { animation-delay: 0.2s; }
+    .td:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes tdB { 0%,60%,100% { transform:translateY(0); opacity:0.3; } 30% { transform:translateY(-5px); opacity:1; } }
+
+    .bottom-strip {
+      display: flex; align-items: center; gap: 8px;
+      padding: 3px 13px 5px; flex-shrink: 0;
+    }
+    .tok { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-dim); white-space: nowrap; }
+    #opacity-slider {
+      width: 70px; height: 3px; -webkit-appearance: none;
+      background: rgba(255,255,255,0.1); border-radius: 2px; cursor: pointer;
+      margin-right: 8px;
+      align-self: center;
+    }
+    #opacity-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 11px; height: 11px;
+      background: var(--accent); border-radius: 50%;
+      box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 55%, transparent); cursor: pointer;
+    }
+
+    #input-area {
+      padding: 6px 13px 13px;
+      border-top: 1px solid var(--glass-border);
+      display: flex; gap: 7px; align-items: flex-end; flex-shrink: 0;
+    }
+    #chat-input {
+      flex: 1; background: var(--glass-light);
+      border: 1px solid var(--glass-border); border-radius: 9px;
+      padding: 8px 11px; color: var(--text);
+      font-family: 'DM Mono', monospace; font-size: 11.5px;
+      outline: none; resize: none;
+      min-height: 36px; max-height: 110px; line-height: 1.5;
+      transition: border-color 0.2s; overflow-y: auto;
+    }
+    #chat-input:focus { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+    #chat-input::placeholder { color: var(--text-dim); }
+    #send-btn {
+      width: 36px; height: 36px; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none; border-radius: 9px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s; color: #07070e;
+    }
+    #send-btn:hover { transform: scale(1.07); box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 32%, transparent); }
+    #send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+    #send-btn svg { width: 15px; height: 15px; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TITLEBAR -->
+  <div id="titlebar">
+    <div class="title-left">
+      <div class="ghost-dot"></div>
+      <div>
+        <div class="app-title">Ghost AI</div>
+        <div class="app-sub">Invisible · Always on top</div>
+      </div>
+    </div>
+    <div class="title-controls">
+      <input type="range" id="opacity-slider" min="20" max="95" value="82" title="Opacity" />
+      <button class="ctrl-btn" id="settings-btn" title="Settings">⚙</button>
+      <button class="ctrl-btn" id="minimize-btn">─</button>
+      <button class="ctrl-btn close-btn" id="close-btn">✕</button>
+    </div>
+  </div>
+
+  <!-- SETUP PANEL -->
+  <div id="setup-panel">
+
+    <!-- Provider dropdown -->
+    <div class="row">
+      <div class="lbl">AI Provider</div>
+      <div class="provider-select-wrap">
+        <div class="provider-badge" id="provider-badge"></div>
+        <select class="gi" id="provider-select">
+          <option value="groq">⚡  Groq  (Free · Fast · gsk_...)</option>
+          <option value="anthropic">🤖  Anthropic Claude  (sk-ant-...)</option>
+          <option value="gemini">✦  Google Gemini  (AIzaSy...)</option>
+          <option value="grok">🌀  xAI Grok  (xai-...)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Model dropdown -->
+    <div class="row">
+      <div class="lbl">Model</div>
+      <select class="gi" id="model-select"></select>
+    </div>
+
+    <!-- API Key -->
+    <div class="row">
+      <div class="lbl" id="key-lbl">API Key</div>
+      <div class="input-with-toggle">
+        <input type="password" class="gi" id="api-key-input" spellcheck="false" autocomplete="off" />
+        <button type="button" class="copy-key-btn" id="copy-key-btn" title="Copy API Key">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+        <button type="button" class="toggle-password" id="toggle-password-btn" title="Toggle password visibility">
+          <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <svg class="eye-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="key-help" id="key-help"></div>
+    </div>
+
+    <!-- System prompt -->
+    <div class="row">
+      <div class="lbl">System Prompt <span style="opacity:0.45">(optional)</span></div>
+      <input type="text" class="gi" id="system-input" placeholder="You are a helpful assistant..." />
+    </div>
+
+    <!-- Validate button -->
+    <button id="validate-btn">
+      <span id="vbtn-icon">🔍</span>
+      <span id="vbtn-text">Verify API Key & Connect</span>
+    </button>
+
+    <!-- Validation steps -->
+    <div id="val-steps">
+      <div class="vstep pending" id="vs-format">
+        <div class="vstep-icon" id="vi-format">○</div>
+        <span id="vt-format">Checking key format</span>
+      </div>
+      <div class="vstep pending" id="vs-reach">
+        <div class="vstep-icon" id="vi-reach">○</div>
+        <span id="vt-reach">Reaching API endpoint</span>
+      </div>
+      <div class="vstep pending" id="vs-auth">
+        <div class="vstep-icon" id="vi-auth">○</div>
+        <span id="vt-auth">Authenticating key</span>
+      </div>
+      <div class="vstep pending" id="vs-model">
+        <div class="vstep-icon" id="vi-model">○</div>
+        <span id="vt-model">Verifying model access</span>
+      </div>
+      <div class="vstep pending" id="vs-chat">
+        <div class="vstep-icon" id="vi-chat">○</div>
+        <span id="vt-chat">Test message response</span>
+      </div>
+    </div>
+
+    <!-- Error detail -->
+    <div id="val-error">
+      <strong>⚠ What went wrong</strong>
+      <span id="val-error-msg"></span>
+    </div>
+
+    <!-- Start button (shown only after success) -->
+    <button id="start-btn">Start Chatting →</button>
+
+    <div class="key-hint">
+      Toggle: <kbd>Ctrl+Shift+Space</kbd> &nbsp;·&nbsp; Quit: <kbd>Ctrl+Shift+Q</kbd>
+    </div>
+  </div>
+
+  <!-- CHAT VIEW -->
+  <div id="chat-view">
+    <div id="active-pill">
+      <div class="pdot"></div>
+      <span id="pill-text">groq · llama-3.3-70b</span>
+    </div>
+    <div id="messages"></div>
+    <div class="bottom-strip">
+      <span class="tok" id="token-count"></span>
+    </div>
+    <div id="input-area">
+      <textarea id="chat-input" placeholder="Ask anything… (Enter to send, Shift+Enter = newline)" rows="1"></textarea>
+      <button id="send-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+</div>
+<script>
+// ═══════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════
+const CFG = {
+  groq: {
+    accent: '#FF6FD8', accent2: '#A78BFA',
+    keyLbl: 'Groq API Key', keyPlaceholder: 'gsk_...',
+    keyHelp: 'Get free key → console.groq.com/keys',
+    models: [
+      { v: 'llama-3.3-70b-versatile',  l: 'Llama 3.3 70B · Recommended' },
+      { v: 'llama-3.1-8b-instant',     l: 'Llama 3.1 8B · Fastest' },
+      { v: 'llama3-70b-8192',          l: 'Llama 3 70B · Stable' },
+      { v: 'mixtral-8x7b-32768',       l: 'Mixtral 8x7B' },
+      { v: 'gemma2-9b-it',             l: 'Gemma 2 9B' },
+    ],
+  },
+  anthropic: {
+    accent: '#7DF9AA', accent2: '#4FC3F7',
+    keyLbl: 'Anthropic API Key', keyPlaceholder: 'sk-ant-api03-...',
+    keyHelp: 'Get key → console.anthropic.com/settings/keys',
+    models: [
+      { v: 'claude-sonnet-4-20250514',  l: 'Claude Sonnet 4 · Recommended' },
+      { v: 'claude-opus-4-20250514',    l: 'Claude Opus 4 · Most Powerful' },
+      { v: 'claude-haiku-4-5-20251001', l: 'Claude Haiku 4.5 · Fastest' },
+    ],
+  },
+  gemini: {
+    accent: '#4FC3F7', accent2: '#CE93D8',
+    keyLbl: 'Google AI API Key', keyPlaceholder: 'AIzaSy...',
+    keyHelp: 'Get free key → aistudio.google.com/app/apikey',
+    models: [
+      { v: 'gemini-2.5-flash', l: 'Gemini 2.5 Flash · Recommended' },
+      { v: 'gemini-2.5-pro',   l: 'Gemini 2.5 Pro · Powerful' },
+      { v: 'gemini-2.0-flash', l: 'Gemini 2.0 Flash · Stable' },
+    ],
+  },
+  grok: {
+    accent: '#FB923C', accent2: '#FBBF24',
+    keyLbl: 'xAI API Key', keyPlaceholder: 'xai-...',
+    keyHelp: 'Get key → console.x.ai',
+    models: [
+      { v: 'grok-3',      l: 'Grok 3 · Most Capable' },
+      { v: 'grok-3-mini', l: 'Grok 3 Mini · Fast' },
+      { v: 'grok-2',      l: 'Grok 2 · Stable' },
+    ],
+  },
+};
+
+// ═══════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════
+let provider = localStorage.getItem('ghost_provider') || 'groq';
+let apiKey = '', model = '', systemPrompt = '';
+let history = [], isTyping = false, tokens = 0;
+let validated = false;
+
+// ═══════════════════════════════════════════════
+//  ELEMENTS
+// ═══════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const providerSelect = $('provider-select');
+const modelSelect    = $('model-select');
+const apiInput       = $('api-key-input');
+const togglePassBtn  = $('toggle-password-btn');
+const copyKeyBtn     = $('copy-key-btn');
+const sysInput       = $('system-input');
+const validateBtn    = $('validate-btn');
+const valSteps       = $('val-steps');
+const valError       = $('val-error');
+const valErrorMsg    = $('val-error-msg');
+const startBtn       = $('start-btn');
+const setupPanel     = $('setup-panel');
+const chatView       = $('chat-view');
+const messagesEl     = $('messages');
+const chatInput      = $('chat-input');
+const sendBtn        = $('send-btn');
+const tokenEl        = $('token-count');
+const pillText       = $('pill-text');
+const badge          = $('provider-badge');
+
+// ═══════════════════════════════════════════════
+//  APPLY PROVIDER
+// ═══════════════════════════════════════════════
+function applyProvider(p) {
+  provider = p;
+  const c = CFG[p];
+  document.documentElement.style.setProperty('--accent', c.accent);
+  document.documentElement.style.setProperty('--accent2', c.accent2);
+  badge.style.background = c.accent;
+  badge.style.boxShadow = `0 0 6px ${c.accent}`;
+
+  $('key-lbl').textContent = c.keyLbl;
+  apiInput.placeholder = c.keyPlaceholder;
+  $('key-help').textContent = c.keyHelp;
+
+  modelSelect.innerHTML = '';
+  c.models.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.v; o.textContent = m.l;
+    modelSelect.appendChild(o);
+  });
+  const saved = localStorage.getItem(`ghost_model_${p}`);
+  if (saved) modelSelect.value = saved;
+
+  const savedKey = localStorage.getItem(`ghost_key_${p}`) || '';
+  apiInput.value = savedKey;
+
+  // Reset validation state
+  resetValidation();
+  localStorage.setItem('ghost_provider', p);
+}
+
+providerSelect.value = provider;
+applyProvider(provider);
+
+providerSelect.addEventListener('change', () => applyProvider(providerSelect.value));
+modelSelect.addEventListener('change', () => resetValidation());
+apiInput.addEventListener('input', () => resetValidation());
+
+togglePassBtn.addEventListener('click', () => {
+  const isPass = apiInput.type === 'password';
+  apiInput.type = isPass ? 'text' : 'password';
+  togglePassBtn.classList.toggle('show-pass', isPass);
+});
+
+copyKeyBtn.addEventListener('click', () => {
+  const key = apiInput.value.trim();
+  if (!key) return;
+  navigator.clipboard.writeText(key).then(() => {
+    const origHtml = copyKeyBtn.innerHTML;
+    copyKeyBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 15px; height: 15px;">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    `;
+    setTimeout(() => {
+      copyKeyBtn.innerHTML = origHtml;
+    }, 1500);
+  });
+});
+
+function getContextLimit(mdl) {
+  const m = mdl.toLowerCase();
+  if (m.includes('llama-3.3') || m.includes('llama-3.1')) return 131072;
+  if (m.includes('llama3-70b')) return 8192;
+  if (m.includes('mixtral')) return 32768;
+  if (m.includes('gemma2')) return 8192;
+  if (m.includes('claude')) return 200000;
+  if (m.includes('gemini')) return 1048576; // 1M
+  if (m.includes('grok')) return 131072;
+  return 8192;
+}
+
+function resetValidation() {
+  validated = false;
+  startBtn.classList.remove('visible');
+  valSteps.style.display = 'none';
+  valError.style.display = 'none';
+  ['format','reach','auth','model','chat'].forEach(s => setStep(s, 'pending', '○'));
+}
+
+// restore saved system prompt
+const savedSys = localStorage.getItem('ghost_system');
+if (savedSys) sysInput.value = savedSys;
+
+// ═══════════════════════════════════════════════
+//  VALIDATION STEPS UI
+// ═══════════════════════════════════════════════
+function setStep(id, state, icon, label) {
+  const el = $(`vs-${id}`);
+  const ic = $(`vi-${id}`);
+  const tx = $(`vt-${id}`);
+  el.className = `vstep ${state}`;
+  ic.textContent = icon;
+  if (label) tx.textContent = label;
+}
+
+// ═══════════════════════════════════════════════
+//  VALIDATE
+// ═══════════════════════════════════════════════
+validateBtn.addEventListener('click', async () => {
+  const key = apiInput.value.trim();
+  const mdl = modelSelect.value;
+  const p = provider;
+  const c = CFG[p];
+
+  if (!key) {
+    apiInput.focus();
+    apiInput.style.borderColor = 'var(--danger)';
+    setTimeout(() => apiInput.style.borderColor = '', 1500);
+    return;
+  }
+
+  validateBtn.disabled = true;
+  $('vbtn-icon').textContent = '⏳';
+  $('vbtn-text').textContent = 'Verifying...';
+  valSteps.style.display = 'flex';
+  valError.style.display = 'none';
+  startBtn.classList.remove('visible');
+  validated = false;
+
+  // helper
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+
+  // ── STEP 1: Format check ──
+  setStep('format', 'loading', '↻', 'Checking key format...');
+  await delay(400);
+
+  const formatOk = (() => {
+    if (p === 'groq')      return key.startsWith('gsk_');
+    if (p === 'anthropic') return key.startsWith('sk-ant') || key.startsWith('sk-');
+    if (p === 'gemini')    return key.startsWith('AIza') && key.length > 20;
+    if (p === 'grok')      return key.startsWith('xai-');
+    return true;
+  })();
+
+  if (!formatOk) {
+    setStep('format', 'fail', '✕', `Invalid format — expected: ${c.keyPlaceholder}`);
+    ['reach','auth','model','chat'].forEach(s => setStep(s, 'skip', '–'));
+    showError(`Key format is wrong for ${c.keyLbl}.\n\nExpected format: ${c.keyPlaceholder}\n\nMake sure you copied the full key from ${c.keyHelp.split('→')[1]?.trim() || 'the provider console'}.`);
+    resetBtn();
+    return;
+  }
+  setStep('format', 'ok', '✓', 'Key format looks correct');
+
+  // ── STEP 2: Endpoint reachability ──
+  setStep('reach', 'loading', '↻', 'Connecting to API...');
+  await delay(300);
+  setStep('reach', 'ok', '✓', 'API endpoint reachable');
+
+  // ── STEP 3 & 4: Auth + Model via test call ──
+  setStep('auth', 'loading', '↻', 'Authenticating...');
+  await delay(200);
+  setStep('model', 'loading', '↻', `Checking model: ${mdl}`);
+
+  const result = await window.ghostAI.validateKey({ provider: p, apiKey: key, model: mdl });
+
+  if (!result.success) {
+    const errMsg = result.error || 'Unknown error';
+    const isAuthErr = errMsg.toLowerCase().includes('invalid') || errMsg.toLowerCase().includes('unauthorized') || errMsg.toLowerCase().includes('401') || errMsg.toLowerCase().includes('403');
+    const isModelErr = errMsg.toLowerCase().includes('model') || errMsg.toLowerCase().includes('404');
+    const isRateErr = errMsg.toLowerCase().includes('rate') || errMsg.toLowerCase().includes('429') || errMsg.toLowerCase().includes('quota');
+
+    if (isAuthErr) {
+      setStep('auth', 'fail', '✕', 'Authentication failed');
+      setStep('model', 'skip', '–');
+      setStep('chat', 'skip', '–');
+      showError(errMsg + '\n\n💡 Double-check you copied the full key correctly. Keys are shown only once on creation.');
+    } else if (isModelErr) {
+      setStep('auth', 'ok', '✓', 'Key authenticated');
+      setStep('model', 'fail', '✕', `Model not accessible`);
+      setStep('chat', 'skip', '–');
+      showError(errMsg + '\n\n💡 Try selecting a different model from the dropdown above.');
+    } else if (isRateErr) {
+      setStep('auth', 'ok', '✓', 'Key authenticated');
+      setStep('model', 'ok', '✓', 'Model found');
+      setStep('chat', 'fail', '✕', 'Rate limited');
+      showError(errMsg + '\n\n💡 Wait 30–60 seconds then try again. Free tier has RPM limits.');
+    } else {
+      setStep('auth', 'fail', '✕', 'Request failed');
+      setStep('model', 'skip', '–');
+      setStep('chat', 'skip', '–');
+      showError(errMsg);
+    }
+    resetBtn();
+    return;
+  }
+
+  // ── All good ──
+  setStep('auth', 'ok', '✓', 'API key valid ✓');
+  await delay(250);
+  setStep('model', 'ok', '✓', `Model "${mdl}" accessible`);
+  await delay(250);
+  setStep('chat', 'loading', '↻', 'Testing response...');
+  await delay(400);
+  setStep('chat', 'ok', '✓', 'All systems go!');
+
+  validated = true;
+  validateBtn.disabled = false;
+  $('vbtn-icon').textContent = '✓';
+  $('vbtn-text').textContent = 'Verified!';
+  validateBtn.style.borderColor = 'var(--success)';
+  validateBtn.style.color = 'var(--success)';
+
+  localStorage.setItem(`ghost_key_${p}`, key);
+  localStorage.setItem(`ghost_model_${p}`, mdl);
+
+  await delay(300);
+  startBtn.classList.add('visible');
+});
+
+function showError(msg) {
+  valError.style.display = 'block';
+  valErrorMsg.textContent = msg;
+}
+
+function resetBtn() {
+  validateBtn.disabled = false;
+  $('vbtn-icon').textContent = '🔍';
+  $('vbtn-text').textContent = 'Verify API Key & Connect';
+  validateBtn.style.borderColor = '';
+  validateBtn.style.color = '';
+}
+
+// ═══════════════════════════════════════════════
+//  START CHAT
+// ═══════════════════════════════════════════════
+startBtn.addEventListener('click', () => {
+  if (!validated) return;
+  apiKey = apiInput.value.trim();
+  model = modelSelect.value;
+  systemPrompt = sysInput.value.trim();
+  localStorage.setItem('ghost_system', systemPrompt);
+
+  history = []; tokens = 0;
+  const limit = getContextLimit(model);
+  tokenEl.textContent = `tokens left: ${limit.toLocaleString()}`;
+  messagesEl.innerHTML = '';
+  setupPanel.style.display = 'none';
+  chatView.style.display = 'flex';
+
+  const pName = CFG[provider].accent; // just to confirm it applies
+  pillText.textContent = `${provider} · ${model.split('-').slice(0,3).join('-')}`;
+  addMsg(`Connected via ${provider} · ${model}`, 'system');
+  chatInput.focus();
+});
+
+// ── back to settings ──
+$('settings-btn').addEventListener('click', () => {
+  if (chatView.style.display !== 'none') {
+    chatView.style.display = 'none';
+    setupPanel.style.display = 'flex';
+    resetBtn();
+  }
+});
+$('minimize-btn').addEventListener('click', () => window.ghostAI.minimize());
+$('close-btn').addEventListener('click', () => window.ghostAI.close());
+
+// ═══════════════════════════════════════════════
+//  OPACITY
+// ═══════════════════════════════════════════════
+$('opacity-slider').addEventListener('input', e => {
+  $('app').style.background = `rgba(9,9,14,${e.target.value/100})`;
+});
+
+// ═══════════════════════════════════════════════
+//  CHAT
+// ═══════════════════════════════════════════════
+chatInput.addEventListener('input', () => {
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 110) + 'px';
+});
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+sendBtn.addEventListener('click', send);
+
+function addMsg(text, role) {
+  const el = document.createElement('div');
+  el.className = `msg ${role}`;
+  if (role === 'ai' && typeof marked !== 'undefined') {
+    el.innerHTML = marked.parse(text);
+  } else {
+    el.textContent = text;
+  }
+  messagesEl.appendChild(el);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return el;
+}
+
+function showThinking() {
+  const el = document.createElement('div');
+  el.className = 'thinking'; el.id = 'tind';
+  el.innerHTML = '<div class="td"></div><div class="td"></div><div class="td"></div>';
+  messagesEl.appendChild(el); messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+function hideThinking() { const e = $('tind'); if (e) e.remove(); }
+
+async function send() {
+  const txt = chatInput.value.trim();
+  if (!txt || isTyping) return;
+  isTyping = true; sendBtn.disabled = true;
+  chatInput.value = ''; chatInput.style.height = 'auto';
+  addMsg(txt, 'user');
+  history.push({ role: 'user', content: txt });
+  showThinking();
+  const res = await window.ghostAI.chat({ provider, apiKey, messages: history, model, systemPrompt });
+  hideThinking();
+  if (res.success) {
+    addMsg(res.content, 'ai');
+    history.push({ role: 'assistant', content: res.content });
+    tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
+    const limit = getContextLimit(model);
+    const left = Math.max(0, limit - tokens);
+    tokenEl.textContent = `tokens left: ${left.toLocaleString()}`;
+  } else {
+    addMsg(`⚠ ${res.error}`, 'error');
+    history.pop();
+  }
+  isTyping = false; sendBtn.disabled = false; chatInput.focus();
+}
+</script>
+</body>
+</html>
