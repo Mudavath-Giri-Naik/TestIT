@@ -4,6 +4,15 @@ contextBridge.exposeInMainWorld('ghostAI', {
   abortChat: () => ipcRenderer.send('ai-chat-abort'),
   validateKey: (opts) => ipcRenderer.invoke('validate-key', opts),
   setClickThrough: (enabled) => ipcRenderer.invoke('set-click-through', enabled),
+  db: {
+    getSessions: () => ipcRenderer.invoke('db:get-sessions'),
+    createSession: (id, title, provider, model) => ipcRenderer.invoke('db:create-session', id, title, provider, model),
+    getMessages: (sessionId) => ipcRenderer.invoke('db:get-messages', sessionId),
+    addMessage: (sessionId, role, content) => ipcRenderer.invoke('db:add-message', sessionId, role, content),
+    deleteSession: (id) => ipcRenderer.invoke('db:delete-session', id),
+    getMemory: () => ipcRenderer.invoke('db:get-memory'),
+    updateMemory: (text) => ipcRenderer.invoke('db:update-memory', text),
+  },
   hotkeys: {
     getRegisteredHotkeys: () => ipcRenderer.invoke('hotkeys:get'),
     registerHotkey: (hotkey) => ipcRenderer.invoke('hotkeys:register', hotkey),

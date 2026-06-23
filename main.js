@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, globalShortcut, screen, Menu, Tray, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const db = require('./src/main/database');
 const { JsonSettingsStore } = require('./src/main/hotkeys/settingsStore');
 const { HOTKEY_ACTIONS, HotkeyManager } = require('./src/main/hotkeys/hotkeyManager');
 
@@ -226,6 +227,7 @@ app.whenReady().then(() => {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 
+  db.init();
   createHotkeyManager();
 });
 
@@ -243,6 +245,29 @@ ipcMain.on('window-minimize', () => mainWindow.hide());
 ipcMain.handle('set-click-through', (event, enabled) => {
   setClickThrough(Boolean(enabled));
   return clickThrough;
+});
+
+// ── DATABASE / HISTORY ──
+ipcMain.handle('db:get-sessions', () => {
+  try { return { success: true, data: db.getSessions() }; } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:create-session', (event, id, title, provider, model) => {
+  try { return { success: true, data: db.createSession(id, title, provider, model) }; } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:get-messages', (event, sessionId) => {
+  try { return { success: true, data: db.getMessages(sessionId) }; } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:add-message', (event, sessionId, role, content) => {
+  try { db.addMessage(sessionId, role, content); return { success: true }; } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:delete-session', (event, id) => {
+  try { db.deleteSession(id); return { success: true }; } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:get-memory', () => {
+  try { return { success: true, data: db.getCoreMemory() }; } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:update-memory', (event, text) => {
+  try { db.updateCoreMemory(text); return { success: true }; } catch (e) { return { success: false, error: e.message }; }
 });
 
 // ── VALIDATE API KEY (test call) ──

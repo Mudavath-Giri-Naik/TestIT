@@ -17,7 +17,9 @@
     "executableName": "Ghost AI",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "asar": true,
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "win": {
       "target": "nsis"
     },
@@ -39,5 +41,8 @@
   "devDependencies": {
     "electron": "^42.3.3",
     "electron-builder": "^26.15.2"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1"
   }
 }

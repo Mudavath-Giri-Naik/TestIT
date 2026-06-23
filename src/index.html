@@ -555,6 +555,28 @@
       0%, 100% { border-color: rgba(255, 107, 107, 0.5); }
       50% { border-color: rgba(255, 107, 107, 0.9); }
     }
+
+    /* ── HISTORY PANEL ── */
+    #history-panel {
+      position: absolute; top: 48px; bottom: 0; left: 0; right: 0;
+      background: var(--glass); backdrop-filter: blur(40px);
+      z-index: 100; display: none; flex-direction: column;
+      border-top: 1px solid var(--glass-border);
+      padding: 12px; gap: 10px; overflow-y: auto;
+    }
+    .session-item {
+      padding: 10px 12px; background: rgba(255,255,255,0.03);
+      border: 1px solid var(--glass-border); border-radius: 10px;
+      cursor: pointer; transition: all 0.15s;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .session-item:hover {
+      background: rgba(255,255,255,0.07); border-color: var(--accent);
+    }
+    .session-title { font-size: 11.5px; color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .session-meta { font-size: 9px; color: var(--text-dim); font-family: 'DM Mono', monospace; display: flex; justify-content: space-between; }
+    .session-del { color: var(--danger); opacity: 0; transition: opacity 0.2s; background: transparent; border: none; cursor: pointer; padding: 2px 5px; }
+    .session-item:hover .session-del { opacity: 1; }
   </style>
 </head>
 <body>
@@ -571,6 +593,18 @@
     </div>
     <div class="title-controls">
       <input type="range" id="opacity-slider" min="20" max="95" value="82" title="Opacity" />
+      <button class="ctrl-btn" id="new-chat-btn" title="New Chat" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 20h9"></path>
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+        </svg>
+      </button>
+      <button class="ctrl-btn" id="history-btn" title="History" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+      </button>
       <button class="ctrl-btn" id="click-through-btn" title="Click-through off">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
           <path d="M5 3l14 10-7 1.5L9 21 5 3z"></path>
@@ -719,6 +753,12 @@
     </div>
   </div>
 
+  <!-- HISTORY PANEL -->
+  <div id="history-panel">
+    <div class="row"><div class="lbl">Chat History</div></div>
+    <div id="history-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+  </div>
+
 </div>
 <script>
 // ═══════════════════════════════════════════════
@@ -779,6 +819,8 @@ let validated = false;
 let clickThrough = false;
 let bootstrapping = true;
 let didAutoStart = false;
+let currentSessionId = null;
+let unifiedMemory = '';
 
 // ═══════════════════════════════════════════════
 //  ELEMENTS
@@ -801,6 +843,10 @@ const messagesEl     = $('messages');
 const chatInput      = $('chat-input');
 const sendBtn        = $('send-btn');
 const stopBtn        = $('stop-btn');
+const newChatBtn     = $('new-chat-btn');
+const historyBtn     = $('history-btn');
+const historyPanel   = $('history-panel');
+const historyList    = $('history-list');
 const tokenEl        = $('token-count');
 const pillText       = $('pill-text');
 const badge          = $('provider-badge');
@@ -1324,7 +1370,7 @@ function resetBtn() {
 // ═══════════════════════════════════════════════
 //  START CHAT
 // ═══════════════════════════════════════════════
-function enterChat() {
+async function enterChat(sessionId = null) {
   apiKey = apiInput.value.trim();
   model = modelSelect.value;
   systemPrompt = sysInput.value.trim();
@@ -1332,14 +1378,47 @@ function enterChat() {
   localStorage.setItem('ghost_auto_start', '1');
 
   history = []; tokens = 0;
-  const limit = getContextLimit(model);
-  tokenEl.textContent = `tokens left: ${limit.toLocaleString()}`;
   messagesEl.innerHTML = '';
   setupPanel.style.display = 'none';
+  historyPanel.style.display = 'none';
   chatView.style.display = 'flex';
-
+  newChatBtn.style.display = 'flex';
+  historyBtn.style.display = 'flex';
+  
   pillText.textContent = `${provider} · ${model.split('-').slice(0,3).join('-')}`;
-  addMsg(`Connected via ${provider} · ${model}`, 'system');
+  
+  // Load unified memory
+  try {
+    const memRes = await window.ghostAI.db.getMemory();
+    if (memRes && memRes.success) unifiedMemory = memRes.data;
+  } catch(e) {}
+
+  if (sessionId) {
+    currentSessionId = sessionId;
+    const res = await window.ghostAI.db.getMessages(sessionId);
+    if (res && res.success) {
+      res.data.forEach(msg => {
+        addMsg(msg.content, msg.role === 'user' ? 'user' : 'ai');
+        history.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content });
+      });
+      tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
+    }
+    addMsg(`Loaded session via ${provider} · ${model}`, 'system');
+  } else {
+    currentSessionId = 'sess_' + Date.now();
+    let chatName = 'New Chat';
+    try {
+      const sessRes = await window.ghostAI.db.getSessions();
+      if (sessRes && sessRes.success) {
+        chatName = `Chat ${sessRes.data.length + 1}`;
+      }
+    } catch(e) {}
+    await window.ghostAI.db.createSession(currentSessionId, chatName, provider, model);
+    addMsg(`Connected via ${provider} · ${model}`, 'system');
+  }
+
+  const limit = getContextLimit(model);
+  tokenEl.textContent = `tokens left: ${(limit - tokens).toLocaleString()}`;
   chatInput.focus();
 }
 
@@ -1350,8 +1429,11 @@ startBtn.addEventListener('click', () => {
 
 // ── back to settings ──
 function openSettings() {
-  if (chatView.style.display !== 'none') {
+  if (chatView.style.display !== 'none' || historyPanel.style.display !== 'none') {
     chatView.style.display = 'none';
+    historyPanel.style.display = 'none';
+    newChatBtn.style.display = 'none';
+    historyBtn.style.display = 'none';
     setupPanel.style.display = 'flex';
     resetBtn();
   }
@@ -1386,15 +1468,57 @@ window.ghostAI.hotkeys.onEvent(hotkey => {
       openSettings();
       break;
     case 'new-chat':
-      if (chatView.style.display !== 'none') {
-        history = [];
-        tokens = 0;
-        messagesEl.innerHTML = '';
-        addMsg('New chat started.', 'system');
-        chatInput.focus();
+      if (chatView.style.display !== 'none' || historyPanel.style.display !== 'none') {
+        enterChat(null);
       }
       break;
   }
+});
+
+// ── HISTORY ──
+newChatBtn.addEventListener('click', () => enterChat(null));
+
+historyBtn.addEventListener('click', async () => {
+  if (historyPanel.style.display === 'flex') {
+    historyPanel.style.display = 'none';
+    return;
+  }
+  historyPanel.style.display = 'flex';
+  historyList.innerHTML = '<div style="color:var(--text-dim);font-size:11px;text-align:center;">Loading...</div>';
+  
+  const res = await window.ghostAI.db.getSessions();
+  if (!res || !res.success) {
+    historyList.innerHTML = '<div style="color:var(--danger);font-size:11px;text-align:center;">Failed to load history</div>';
+    return;
+  }
+  
+  historyList.innerHTML = '';
+  if (res.data.length === 0) {
+    historyList.innerHTML = '<div style="color:var(--text-dim);font-size:11px;text-align:center;">No past chats found.</div>';
+    return;
+  }
+  
+  res.data.forEach(sess => {
+    const d = new Date(sess.created_at);
+    const item = document.createElement('div');
+    item.className = 'session-item';
+    item.innerHTML = `
+      <div class="session-title">${sess.title || 'Chat'}</div>
+      <div class="session-meta">
+        <span>${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} · ${sess.model}</span>
+        <button class="session-del" title="Delete">✕</button>
+      </div>
+    `;
+    item.addEventListener('click', (e) => {
+      if (e.target.classList.contains('session-del')) {
+        window.ghostAI.db.deleteSession(sess.id);
+        item.remove();
+      } else {
+        enterChat(sess.id);
+      }
+    });
+    historyList.appendChild(item);
+  });
 });
 
 // ═══════════════════════════════════════════════
@@ -1446,8 +1570,19 @@ async function send() {
   chatInput.value = ''; chatInput.style.height = 'auto';
   addMsg(txt, 'user');
   history.push({ role: 'user', content: txt });
+  
+  // Save to DB
+  window.ghostAI.db.addMessage(currentSessionId, 'user', txt);
+
   showThinking();
-  const res = await window.ghostAI.chat({ provider, apiKey, messages: history, model, systemPrompt });
+  
+  // Inject unified memory into the system prompt behind the scenes
+  let activeSystemPrompt = systemPrompt;
+  if (unifiedMemory) {
+    activeSystemPrompt += (activeSystemPrompt ? '\n\n' : '') + `[CORE MEMORY ABOUT USER (Do not acknowledge this explicitly unless relevant)]:\n${unifiedMemory}`;
+  }
+
+  const res = await window.ghostAI.chat({ provider, apiKey, messages: history, model, systemPrompt: activeSystemPrompt });
   hideThinking();
   stopBtn.classList.remove('visible');
   sendBtn.style.display = 'flex';
@@ -1455,10 +1590,17 @@ async function send() {
   if (res.success) {
     addMsg(res.content, 'ai');
     history.push({ role: 'assistant', content: res.content });
+    window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
+    
     tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
     const limit = getContextLimit(model);
     const left = Math.max(0, limit - tokens);
     tokenEl.textContent = `tokens left: ${left.toLocaleString()}`;
+
+    // Optionally update core memory in the background every few messages
+    if (history.length % 6 === 0) {
+      updateCoreMemoryBackground();
+    }
   } else if (res.aborted) {
     addMsg('⏹ Generation stopped.', 'system');
     history.pop();
@@ -1467,6 +1609,23 @@ async function send() {
     history.pop();
   }
   isTyping = false; chatInput.focus();
+}
+
+async function updateCoreMemoryBackground() {
+  if (!apiKey || !model) return;
+  const summarizePrompt = `Analyze the conversation history. Extract any new, concrete facts, preferences, or technical context about the user. Update the existing core memory with these new facts. Keep it concise, formatted as bullet points. ONLY output the updated core memory, nothing else. Existing memory:\n${unifiedMemory}`;
+  
+  // Make a silent call to AI to summarize
+  try {
+    const res = await window.ghostAI.chat({ provider, apiKey, messages: history, model, systemPrompt: summarizePrompt });
+    if (res.success && res.content) {
+      unifiedMemory = res.content;
+      window.ghostAI.db.updateMemory(unifiedMemory);
+      console.log('Core memory updated in background.');
+    }
+  } catch (e) {
+    console.warn('Background memory update failed:', e);
+  }
 }
 
 stopBtn.addEventListener('click', () => {
