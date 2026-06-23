@@ -1,7 +1,159 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, screen, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, screen, Menu, Tray, nativeImage } = require('electron');
+const fs = require('fs');
 const path = require('path');
+const { JsonSettingsStore } = require('./src/main/hotkeys/settingsStore');
+const { HOTKEY_ACTIONS, HotkeyManager } = require('./src/main/hotkeys/hotkeyManager');
+
+const APP_NAME = 'Ghost AI';
+const APP_ID = 'com.ghost.ai';
+
+app.setName(APP_NAME);
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
 let mainWindow;
+let tray;
+let clickThrough = false;
+let hotkeyManager;
+let isQuitting = false;
+
+function setClickThrough(enabled) {
+  if (!mainWindow) return;
+  clickThrough = enabled;
+  mainWindow.setIgnoreMouseEvents(enabled, { forward: true });
+  mainWindow.webContents.send('click-through-changed', enabled);
+  updateTrayMenu();
+}
+
+function showAndFocusWindow() {
+  if (!mainWindow) return;
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+}
+
+function toggleWindowVisibility() {
+  if (!mainWindow) return;
+  if (mainWindow.isVisible()) mainWindow.hide();
+  else showAndFocusWindow();
+  updateTrayMenu();
+}
+
+function sendToRenderer(channel, payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send(channel, payload);
+}
+
+function createHotkeyManager() {
+  const settingsPath = path.join(app.getPath('userData'), 'hotkeys.json');
+  const store = new JsonSettingsStore({ filePath: settingsPath });
+  hotkeyManager = new HotkeyManager({ globalShortcut, store });
+
+  hotkeyManager.on('hotkey:pressed', (hotkey) => {
+    console.log(`[hotkeys] ${hotkey.accelerator} -> ${hotkey.action}`);
+    handleHotkeyAction(hotkey);
+    sendToRenderer('hotkey-event', hotkey);
+  });
+
+  hotkeyManager.on('hotkey:changed', (hotkeys) => {
+    sendToRenderer('hotkeys-changed', hotkeys);
+  });
+
+  hotkeyManager.on('hotkey:error', (hotkey) => {
+    sendToRenderer('hotkey-error', hotkey);
+  });
+
+  hotkeyManager.initialize();
+}
+
+function createTrayIcon() {
+  const assetCandidates = [
+    path.join(__dirname, 'assets', 'tray.png'),
+    path.join(__dirname, 'assets', 'icon.png'),
+    path.join(__dirname, 'assets', 'tray.svg'),
+  ];
+  const iconPath = assetCandidates.find(candidate => {
+    try {
+      return fs.existsSync(candidate);
+    } catch {
+      return false;
+    }
+  });
+
+  if (iconPath) {
+    const icon = nativeImage.createFromPath(iconPath);
+    if (!icon.isEmpty()) return icon;
+  }
+
+  return nativeImage.createFromDataURL(`data:image/svg+xml;utf8,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+      <rect width="32" height="32" rx="8" fill="#09090e"/>
+      <path d="M9 17c0-5 3-9 7-9s7 4 7 9v5c0 1-1 2-2 2h-1.6l-1.8-2-1.8 2h-1.6l-1.8-2-1.8 2H11c-1 0-2-1-2-2v-5z" fill="#7DF9AA"/>
+      <circle cx="13" cy="16" r="1.4" fill="#09090e"/>
+      <circle cx="19" cy="16" r="1.4" fill="#09090e"/>
+    </svg>
+  `)}`);
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+
+  const visible = Boolean(mainWindow && mainWindow.isVisible());
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: visible ? 'Hide Ghost AI' : 'Show Ghost AI',
+      click: toggleWindowVisibility,
+    },
+    {
+      label: clickThrough ? 'Disable Click-through' : 'Enable Click-through',
+      click: () => setClickThrough(!clickThrough),
+    },
+    {
+      label: 'Open Settings',
+      click: () => {
+        showAndFocusWindow();
+        sendToRenderer('hotkey-event', { action: 'open-settings' });
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Ghost AI',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setToolTip(APP_NAME);
+  tray.setContextMenu(contextMenu);
+}
+
+function createTray() {
+  tray = new Tray(createTrayIcon());
+  tray.on('click', toggleWindowVisibility);
+  tray.on('double-click', showAndFocusWindow);
+  updateTrayMenu();
+}
+
+function handleHotkeyAction(hotkey) {
+  switch (hotkey.action) {
+    case 'toggle-window':
+      toggleWindowVisibility();
+      break;
+    case 'toggle-click-through':
+      setClickThrough(!clickThrough);
+      break;
+    case 'quit-app':
+      app.quit();
+      break;
+    case 'focus-chat':
+    case 'open-settings':
+    case 'new-chat':
+      showAndFocusWindow();
+      break;
+    default:
+      console.warn(`[hotkeys] No handler registered for action "${hotkey.action}".`);
+  }
+}
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
@@ -25,11 +177,19 @@ function createWindow() {
   mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   mainWindow.loadFile('src/index.html');
+  mainWindow.on('show', updateTrayMenu);
+  mainWindow.on('hide', updateTrayMenu);
+  mainWindow.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
   if (process.platform === 'darwin') app.dock.hide();
 }
 
 app.whenReady().then(() => {
   createWindow();
+  createTray();
 
   // Create Edit menu to allow standard copy/paste keyboard shortcuts
   const template = [
@@ -49,20 +209,54 @@ app.whenReady().then(() => {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 
-  globalShortcut.register('CommandOrControl+Shift+Space', () => {
-    if (mainWindow.isVisible()) mainWindow.hide();
-    else { mainWindow.show(); mainWindow.focus(); }
-  });
-  globalShortcut.register('CommandOrControl+Shift+Q', () => app.quit());
+  createHotkeyManager();
 });
 
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+app.on('will-quit', () => {
+  if (hotkeyManager) hotkeyManager.shutdown();
+  globalShortcut.unregisterAll();
+});
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
 ipcMain.on('window-close', () => mainWindow.hide());
-ipcMain.on('window-minimize', () => mainWindow.minimize());
+ipcMain.on('window-minimize', () => mainWindow.hide());
+ipcMain.handle('set-click-through', (event, enabled) => {
+  setClickThrough(Boolean(enabled));
+  return clickThrough;
+});
 
 // ── VALIDATE API KEY (test call) ──
+ipcMain.handle('hotkeys:get', () => {
+  return {
+    success: true,
+    data: hotkeyManager ? hotkeyManager.getRegisteredHotkeys() : [],
+    actions: HOTKEY_ACTIONS,
+  };
+});
+
+ipcMain.handle('hotkeys:register', (event, hotkey) => {
+  if (!hotkeyManager) return { success: false, error: 'Hotkey manager is not ready.' };
+  return hotkeyManager.registerHotkey(hotkey);
+});
+
+ipcMain.handle('hotkeys:update', (event, id, updates) => {
+  if (!hotkeyManager) return { success: false, error: 'Hotkey manager is not ready.' };
+  return hotkeyManager.updateHotkey(id, updates);
+});
+
+ipcMain.handle('hotkeys:unregister', (event, id) => {
+  if (!hotkeyManager) return { success: false, error: 'Hotkey manager is not ready.' };
+  return hotkeyManager.unregisterHotkey(id);
+});
+
+ipcMain.handle('hotkeys:validate', (event, accelerator, excludeId) => {
+  if (!hotkeyManager) return { success: false, error: 'Hotkey manager is not ready.' };
+  return hotkeyManager.validateAccelerator(accelerator, excludeId);
+});
+
 ipcMain.handle('validate-key', async (event, { provider, apiKey, model }) => {
   try {
     const result = await callAI(provider, apiKey, model, [{ role: 'user', content: 'Hi' }], '', true);

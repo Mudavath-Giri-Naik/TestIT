@@ -1,9 +1,11 @@
 {
   "name": "ghost-ai",
   "version": "1.0.0",
-  "description": "",
+  "productName": "Ghost AI",
+  "description": "Transparent always-on-top AI chat assistant.",
   "main": "main.js",
   "scripts": {
+    "test": "node --test tests/*.test.js",
     "start": "electron .",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
@@ -12,19 +14,19 @@
   "build": {
     "appId": "com.ghost.ai",
     "productName": "Ghost AI",
+    "executableName": "Ghost AI",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "asar": true,
     "directories": { "output": "dist" },
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": "nsis"
     },
     "mac": {
       "target": "dmg",
-      "icon": "assets/icon.icns",
       "category": "public.app-category.productivity"
     },
     "linux": {
-      "target": "AppImage",
-      "icon": "assets/icon.png"
+      "target": "AppImage"
     },
     "nsis": {
       "oneClick": true,

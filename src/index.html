@@ -9,6 +9,10 @@
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+    /* Hide ALL scrollbars globally */
+    *::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
+    * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+
     :root {
       --glass: rgba(9, 9, 14, 0.82);
       --glass-light: rgba(255,255,255,0.04);
@@ -71,14 +75,22 @@
       display: flex; align-items: center; justify-content: center; transition: all 0.15s;
     }
     .ctrl-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+    .ctrl-btn.active {
+      color: var(--accent);
+      border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+      background: color-mix(in srgb, var(--accent) 13%, transparent);
+    }
     .ctrl-btn.close-btn:hover { color: var(--danger); border-color: rgba(255,107,107,0.35); }
+    .ctrl-btn svg { width: 14px; height: 14px; }
 
     /* ── SETUP ── */
     #setup-panel {
       padding: 16px 16px 14px;
       display: flex; flex-direction: column; gap: 12px;
       overflow-y: auto; flex: 1;
+      scrollbar-width: none;
     }
+    #setup-panel::-webkit-scrollbar { width: 0; height: 0; }
     .row { display: flex; flex-direction: column; gap: 5px; }
     .lbl {
       font-size: 10px; color: var(--text-dim);
@@ -251,6 +263,121 @@
     #start-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 30%, transparent); }
     #start-btn.visible { display: block; }
 
+    .hotkey-panel {
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      background: rgba(0,0,0,0.16);
+      padding: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .hotkey-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .hotkey-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .hotkey-item {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 8px;
+      background: rgba(255,255,255,0.025);
+    }
+    .hotkey-enabled {
+      width: 15px;
+      height: 15px;
+      margin-top: 2px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .hotkey-main {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      min-width: 0;
+    }
+    .hotkey-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .hotkey-label {
+      color: var(--text);
+      font-size: 11.5px;
+      font-weight: 600;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .hotkey-status {
+      color: var(--text-dim);
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      white-space: nowrap;
+    }
+    .hotkey-status.error { color: var(--danger); }
+    .hotkey-controls {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px;
+      align-items: center;
+    }
+    .hotkey-capture {
+      cursor: pointer;
+      user-select: none;
+    }
+    .hotkey-capture.recording {
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+    .hotkey-action {
+      min-width: 108px;
+      padding-left: 10px !important;
+    }
+    .hotkey-msg {
+      min-height: 13px;
+      color: var(--text-dim);
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      line-height: 1.45;
+    }
+    .hotkey-msg.error { color: var(--danger); }
+    .hotkey-msg.ok { color: var(--success); }
+    .hotkey-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+    .mini-btn {
+      height: 25px;
+      min-width: 25px;
+      padding: 0 8px;
+      border-radius: 7px;
+      border: 1px solid var(--glass-border);
+      background: var(--glass-light);
+      color: var(--text-dim);
+      font-family: 'Syne', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mini-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.18); }
+    .mini-btn.danger:hover { color: var(--danger); border-color: rgba(255,107,107,0.35); }
+    .mini-btn.primary { color: var(--accent); }
+
     .key-hint {
       font-size: 9.5px; color: var(--text-dim);
       text-align: center; font-family: 'DM Mono', monospace; line-height: 1.9;
@@ -277,10 +404,9 @@
     #messages {
       flex: 1; overflow-y: auto; padding: 8px 13px 4px;
       display: flex; flex-direction: column; gap: 8px;
-      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.07) transparent;
+      scrollbar-width: none;
     }
-    #messages::-webkit-scrollbar { width: 3px; }
-    #messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 2px; }
+    #messages::-webkit-scrollbar { width: 0; height: 0; }
 
     .msg {
       max-width: 90%; padding: 8px 12px;
@@ -392,7 +518,9 @@
       outline: none; resize: none;
       min-height: 36px; max-height: 110px; line-height: 1.5;
       transition: border-color 0.2s; overflow-y: auto;
+      scrollbar-width: none;
     }
+    #chat-input::-webkit-scrollbar { width: 0; height: 0; }
     #chat-input:focus { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
     #chat-input::placeholder { color: var(--text-dim); }
     #send-btn {
@@ -421,6 +549,12 @@
     </div>
     <div class="title-controls">
       <input type="range" id="opacity-slider" min="20" max="95" value="82" title="Opacity" />
+      <button class="ctrl-btn" id="click-through-btn" title="Click-through off">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3l14 10-7 1.5L9 21 5 3z"></path>
+          <path d="M12 14.5l4.5 5"></path>
+        </svg>
+      </button>
       <button class="ctrl-btn" id="settings-btn" title="Settings">⚙</button>
       <button class="ctrl-btn" id="minimize-btn">─</button>
       <button class="ctrl-btn close-btn" id="close-btn">✕</button>
@@ -481,6 +615,18 @@
       <input type="text" class="gi" id="system-input" placeholder="You are a helpful assistant..." />
     </div>
 
+    <div class="hotkey-panel">
+      <div class="hotkey-head">
+        <div>
+          <div class="lbl">Global Hotkeys</div>
+          <div class="key-help">Shortcuts work even when another app is focused.</div>
+        </div>
+        <button type="button" class="mini-btn primary" id="add-hotkey-btn">Add</button>
+      </div>
+      <div class="hotkey-list" id="hotkey-list"></div>
+      <div class="hotkey-msg" id="hotkey-global-msg"></div>
+    </div>
+
     <!-- Validate button -->
     <button id="validate-btn">
       <span id="vbtn-icon">🔍</span>
@@ -521,7 +667,7 @@
     <button id="start-btn">Start Chatting →</button>
 
     <div class="key-hint">
-      Toggle: <kbd>Ctrl+Shift+Space</kbd> &nbsp;·&nbsp; Quit: <kbd>Ctrl+Shift+Q</kbd>
+      Toggle: <kbd>Ctrl+Shift+Space</kbd> &nbsp;·&nbsp; Click-through: <kbd>Ctrl+Shift+X</kbd> &nbsp;·&nbsp; Quit: <kbd>Ctrl+Shift+Q</kbd>
     </div>
   </div>
 
@@ -603,6 +749,9 @@ let provider = localStorage.getItem('ghost_provider') || 'groq';
 let apiKey = '', model = '', systemPrompt = '';
 let history = [], isTyping = false, tokens = 0;
 let validated = false;
+let clickThrough = false;
+let bootstrapping = true;
+let didAutoStart = false;
 
 // ═══════════════════════════════════════════════
 //  ELEMENTS
@@ -627,6 +776,55 @@ const sendBtn        = $('send-btn');
 const tokenEl        = $('token-count');
 const pillText       = $('pill-text');
 const badge          = $('provider-badge');
+const clickThroughBtn = $('click-through-btn');
+const hotkeyList     = $('hotkey-list');
+const addHotkeyBtn   = $('add-hotkey-btn');
+const hotkeyGlobalMsg = $('hotkey-global-msg');
+
+let hotkeys = [];
+let hotkeyActions = {};
+
+function profileKey(name, p = provider) {
+  return `ghost_${name}_${p}`;
+}
+
+function getActiveSettings() {
+  return {
+    provider,
+    apiKey: apiInput.value.trim(),
+    model: modelSelect.value,
+    systemPrompt: sysInput.value.trim(),
+  };
+}
+
+function saveActiveSettings() {
+  const settings = getActiveSettings();
+  localStorage.setItem('ghost_provider', settings.provider);
+  localStorage.setItem(profileKey('key', settings.provider), settings.apiKey);
+  localStorage.setItem(profileKey('model', settings.provider), settings.model);
+  localStorage.setItem('ghost_system', settings.systemPrompt);
+}
+
+function markSettingsDirty() {
+  if (bootstrapping) return;
+  validated = false;
+  localStorage.removeItem(profileKey('verified'));
+  localStorage.removeItem('ghost_auto_start');
+  resetValidation();
+}
+
+function markSettingsVerified() {
+  saveActiveSettings();
+  localStorage.setItem(profileKey('verified'), '1');
+}
+
+function shouldAutoStart() {
+  const settings = getActiveSettings();
+  return localStorage.getItem('ghost_auto_start') === '1'
+    && localStorage.getItem(profileKey('verified', settings.provider)) === '1'
+    && Boolean(settings.apiKey)
+    && Boolean(settings.model);
+}
 
 // ═══════════════════════════════════════════════
 //  APPLY PROVIDER
@@ -663,9 +861,22 @@ function applyProvider(p) {
 providerSelect.value = provider;
 applyProvider(provider);
 
-providerSelect.addEventListener('change', () => applyProvider(providerSelect.value));
-modelSelect.addEventListener('change', () => resetValidation());
-apiInput.addEventListener('input', () => resetValidation());
+providerSelect.addEventListener('change', () => {
+  applyProvider(providerSelect.value);
+  saveActiveSettings();
+  if (localStorage.getItem(profileKey('verified')) !== '1') markSettingsDirty();
+});
+modelSelect.addEventListener('change', () => {
+  saveActiveSettings();
+  markSettingsDirty();
+});
+apiInput.addEventListener('input', () => {
+  saveActiveSettings();
+  markSettingsDirty();
+});
+sysInput.addEventListener('input', () => {
+  saveActiveSettings();
+});
 
 togglePassBtn.addEventListener('click', () => {
   const isPass = apiInput.type === 'password';
@@ -712,6 +923,237 @@ function resetValidation() {
 // restore saved system prompt
 const savedSys = localStorage.getItem('ghost_system');
 if (savedSys) sysInput.value = savedSys;
+
+async function loadHotkeys() {
+  if (!window.ghostAI.hotkeys) return;
+  const result = await window.ghostAI.hotkeys.getRegisteredHotkeys();
+  if (!result.success) {
+    showHotkeyMessage(result.error || 'Could not load hotkeys.', 'error');
+    return;
+  }
+  hotkeys = result.data || [];
+  hotkeyActions = result.actions || {};
+  renderHotkeys();
+}
+
+function renderHotkeys() {
+  hotkeyList.innerHTML = '';
+  hotkeys.forEach(hotkey => hotkeyList.appendChild(createHotkeyRow(hotkey)));
+}
+
+function createHotkeyRow(hotkey) {
+  const row = document.createElement('div');
+  row.className = 'hotkey-item';
+  row.dataset.id = hotkey.id;
+
+  const enabled = document.createElement('input');
+  enabled.type = 'checkbox';
+  enabled.className = 'hotkey-enabled';
+  enabled.checked = hotkey.enabled;
+  enabled.title = 'Enable hotkey';
+
+  const main = document.createElement('div');
+  main.className = 'hotkey-main';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'hotkey-title-row';
+
+  const title = document.createElement('div');
+  title.className = 'hotkey-label';
+  title.textContent = hotkey.label;
+
+  const status = document.createElement('div');
+  status.className = `hotkey-status${hotkey.registrationError ? ' error' : ''}`;
+  status.textContent = hotkey.enabled ? (hotkey.registered ? 'active' : 'inactive') : 'disabled';
+
+  titleRow.append(title, status);
+
+  const controls = document.createElement('div');
+  controls.className = 'hotkey-controls';
+
+  const capture = document.createElement('input');
+  capture.className = 'gi hotkey-capture';
+  capture.value = hotkey.accelerator || '';
+  capture.placeholder = 'Click, then press shortcut';
+  capture.readOnly = true;
+  capture.spellcheck = false;
+
+  const action = document.createElement('select');
+  action.className = 'gi hotkey-action';
+  action.disabled = hotkey.locked;
+  Object.entries(hotkeyActions).forEach(([value, label]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    action.appendChild(option);
+  });
+  action.value = hotkey.action;
+
+  controls.append(capture, action);
+
+  const msg = document.createElement('div');
+  msg.className = `hotkey-msg${hotkey.registrationError ? ' error' : ''}`;
+  msg.textContent = hotkey.registrationError || '';
+
+  const buttons = document.createElement('div');
+  buttons.className = 'hotkey-actions';
+
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'mini-btn primary';
+  save.textContent = hotkey.isDraft ? 'Create' : 'Save';
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'mini-btn danger';
+  remove.textContent = hotkey.isDraft ? 'Cancel' : 'Remove';
+  remove.style.display = hotkey.locked ? 'none' : '';
+
+  buttons.append(save, remove);
+  main.append(titleRow, controls, msg, buttons);
+  row.append(enabled, main);
+
+  capture.addEventListener('focus', () => {
+    capture.classList.add('recording');
+    msg.className = 'hotkey-msg';
+    msg.textContent = 'Press the shortcut keys now.';
+  });
+  capture.addEventListener('blur', () => capture.classList.remove('recording'));
+  capture.addEventListener('keydown', async event => {
+    event.preventDefault();
+    const accelerator = acceleratorFromEvent(event);
+    if (!accelerator) {
+      msg.className = 'hotkey-msg error';
+      msg.textContent = 'Add a letter, number, function key, or Space.';
+      return;
+    }
+    capture.value = accelerator;
+    const validation = await window.ghostAI.hotkeys.validateAccelerator(accelerator, hotkey.isDraft ? null : hotkey.id);
+    msg.className = validation.success ? 'hotkey-msg ok' : 'hotkey-msg error';
+    msg.textContent = validation.success ? 'Shortcut is available.' : validation.error;
+    if (validation.success) capture.value = validation.accelerator;
+  });
+
+  enabled.addEventListener('change', async () => {
+    if (hotkey.isDraft) return;
+    await saveHotkey(hotkey.id, { enabled: enabled.checked }, msg);
+  });
+
+  action.addEventListener('change', () => {
+    const nextLabel = hotkeyActions[action.value] || hotkey.label;
+    title.textContent = nextLabel;
+  });
+
+  save.addEventListener('click', async () => {
+    const label = hotkey.locked ? hotkey.label : (hotkeyActions[action.value] || 'Custom hotkey');
+    const payload = {
+      action: action.value,
+      label,
+      accelerator: capture.value.trim(),
+      enabled: enabled.checked,
+    };
+    if (hotkey.isDraft) await registerHotkey(payload, msg);
+    else await saveHotkey(hotkey.id, payload, msg);
+  });
+
+  remove.addEventListener('click', async () => {
+    if (hotkey.isDraft) {
+      hotkeys = hotkeys.filter(item => item.id !== hotkey.id);
+      renderHotkeys();
+      return;
+    }
+    const result = await window.ghostAI.hotkeys.unregisterHotkey(hotkey.id);
+    if (!result.success) {
+      msg.className = 'hotkey-msg error';
+      msg.textContent = result.error;
+      return;
+    }
+    await loadHotkeys();
+  });
+
+  return row;
+}
+
+async function registerHotkey(payload, msg) {
+  const result = await window.ghostAI.hotkeys.registerHotkey(payload);
+  if (!result.success) {
+    msg.className = 'hotkey-msg error';
+    msg.textContent = result.error;
+    if (result.data) await loadHotkeys();
+    return;
+  }
+  showHotkeyMessage('Hotkey created.', 'ok');
+  await loadHotkeys();
+}
+
+async function saveHotkey(id, updates, msg) {
+  const result = await window.ghostAI.hotkeys.updateHotkey(id, updates);
+  if (!result.success) {
+    msg.className = 'hotkey-msg error';
+    msg.textContent = result.error;
+    if (result.data) await loadHotkeys();
+    return;
+  }
+  msg.className = 'hotkey-msg ok';
+  msg.textContent = 'Saved.';
+  await loadHotkeys();
+}
+
+function showHotkeyMessage(text, state = '') {
+  hotkeyGlobalMsg.className = `hotkey-msg ${state}`.trim();
+  hotkeyGlobalMsg.textContent = text;
+  if (text) setTimeout(() => {
+    if (hotkeyGlobalMsg.textContent === text) hotkeyGlobalMsg.textContent = '';
+  }, 2500);
+}
+
+function acceleratorFromEvent(event) {
+  const modifiers = [];
+  if (event.ctrlKey) modifiers.push('Ctrl');
+  if (event.altKey) modifiers.push('Alt');
+  if (event.shiftKey) modifiers.push('Shift');
+  if (event.metaKey) modifiers.push(window.ghostAI.platform === 'darwin' ? 'Command' : 'Meta');
+
+  const key = normalizeEventKey(event.key);
+  if (!key) return '';
+  return [...modifiers, key].join('+');
+}
+
+function normalizeEventKey(key) {
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return '';
+  if (key === ' ') return 'Space';
+  if (key === 'Esc') return 'Escape';
+  if (key === '+') return 'Plus';
+  if (key.startsWith('Arrow')) return key.replace('Arrow', '');
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
+addHotkeyBtn.addEventListener('click', () => {
+  if (hotkeys.some(hotkey => hotkey.isDraft)) return;
+  hotkeys.push({
+    id: `draft-${Date.now()}`,
+    action: 'focus-chat',
+    label: 'Focus Chat Input',
+    accelerator: '',
+    enabled: true,
+    locked: false,
+    registered: false,
+    registrationError: null,
+    isDraft: true,
+  });
+  renderHotkeys();
+});
+
+window.ghostAI.hotkeys.onChanged(nextHotkeys => {
+  hotkeys = nextHotkeys;
+  renderHotkeys();
+});
+
+window.ghostAI.hotkeys.onError(hotkey => {
+  showHotkeyMessage(hotkey.registrationError || `Could not register ${hotkey.accelerator}.`, 'error');
+});
+
+loadHotkeys();
 
 // ═══════════════════════════════════════════════
 //  VALIDATION STEPS UI
@@ -832,8 +1274,7 @@ validateBtn.addEventListener('click', async () => {
   validateBtn.style.borderColor = 'var(--success)';
   validateBtn.style.color = 'var(--success)';
 
-  localStorage.setItem(`ghost_key_${p}`, key);
-  localStorage.setItem(`ghost_model_${p}`, mdl);
+  markSettingsVerified();
 
   await delay(300);
   startBtn.classList.add('visible');
@@ -855,12 +1296,12 @@ function resetBtn() {
 // ═══════════════════════════════════════════════
 //  START CHAT
 // ═══════════════════════════════════════════════
-startBtn.addEventListener('click', () => {
-  if (!validated) return;
+function enterChat() {
   apiKey = apiInput.value.trim();
   model = modelSelect.value;
   systemPrompt = sysInput.value.trim();
   localStorage.setItem('ghost_system', systemPrompt);
+  localStorage.setItem('ghost_auto_start', '1');
 
   history = []; tokens = 0;
   const limit = getContextLimit(model);
@@ -869,22 +1310,64 @@ startBtn.addEventListener('click', () => {
   setupPanel.style.display = 'none';
   chatView.style.display = 'flex';
 
-  const pName = CFG[provider].accent; // just to confirm it applies
   pillText.textContent = `${provider} · ${model.split('-').slice(0,3).join('-')}`;
   addMsg(`Connected via ${provider} · ${model}`, 'system');
   chatInput.focus();
+}
+
+startBtn.addEventListener('click', () => {
+  if (!validated) return;
+  enterChat();
 });
 
 // ── back to settings ──
-$('settings-btn').addEventListener('click', () => {
+function openSettings() {
   if (chatView.style.display !== 'none') {
     chatView.style.display = 'none';
     setupPanel.style.display = 'flex';
     resetBtn();
   }
-});
+}
+
+$('settings-btn').addEventListener('click', openSettings);
 $('minimize-btn').addEventListener('click', () => window.ghostAI.minimize());
 $('close-btn').addEventListener('click', () => window.ghostAI.close());
+
+function applyClickThroughState(enabled) {
+  clickThrough = enabled;
+  clickThroughBtn.classList.toggle('active', enabled);
+  clickThroughBtn.title = enabled
+    ? 'Click-through on - press Ctrl+Shift+X to turn off'
+    : 'Click-through off';
+}
+
+clickThroughBtn.addEventListener('click', async () => {
+  const enabled = await window.ghostAI.setClickThrough(!clickThrough);
+  applyClickThroughState(enabled);
+});
+
+window.ghostAI.onClickThroughChanged(applyClickThroughState);
+
+window.ghostAI.hotkeys.onEvent(hotkey => {
+  switch (hotkey.action) {
+    case 'focus-chat':
+      if (chatView.style.display !== 'none') chatInput.focus();
+      else apiInput.focus();
+      break;
+    case 'open-settings':
+      openSettings();
+      break;
+    case 'new-chat':
+      if (chatView.style.display !== 'none') {
+        history = [];
+        tokens = 0;
+        messagesEl.innerHTML = '';
+        addMsg('New chat started.', 'system');
+        chatInput.focus();
+      }
+      break;
+  }
+});
 
 // ═══════════════════════════════════════════════
 //  OPACITY
@@ -949,6 +1432,18 @@ async function send() {
   }
   isTyping = false; sendBtn.disabled = false; chatInput.focus();
 }
+
+// ═══════════════════════════════════════════════
+//  AUTO-START: skip setup if settings are saved & verified
+// ═══════════════════════════════════════════════
+(function tryAutoStart() {
+  bootstrapping = false;
+  if (shouldAutoStart()) {
+    validated = true;
+    didAutoStart = true;
+    enterChat();
+  }
+})();
 </script>
 </body>
 </html>

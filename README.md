@@ -11,7 +11,7 @@ Built with Electron + Anthropic Claude API.
 - **Transparent glass UI** — floats over any app
 - **Screen capture protection** — hidden in OBS, Zoom, Teams, Meet, Windows Game Bar
 - **Always on top** — even over fullscreen apps
-- **No taskbar / dock icon** — completely stealthy
+- **Tray-only window controls** — hide/show from the system tray without a taskbar button
 - **Paste your API key** — bring your own Anthropic key
 - **Multi-model** — Sonnet 4, Opus 4, Haiku 4.5
 - **Custom system prompt**
@@ -25,9 +25,12 @@ Built with Electron + Anthropic Claude API.
 | Shortcut | Action |
 |---|---|
 | `Ctrl+Shift+Space` | Toggle show/hide |
+| `Ctrl+Shift+X` | Toggle click-through |
 | `Ctrl+Shift+Q` | Quit app |
 | `Enter` | Send message |
 | `Shift+Enter` | New line in message |
+
+Hotkeys are configurable in the app settings. You can edit, enable, disable, add, and remove custom global shortcuts without restarting the app.
 
 ---
 
@@ -47,6 +50,8 @@ npm start
 ---
 
 ## 📦 Build Installer
+
+Packaged builds use the product/executable name `Ghost AI`. Development runs started with `npm start` still use Electron's development process name because they are launched through the Electron binary.
 
 ### Windows (.exe installer)
 ```bash
@@ -131,11 +136,93 @@ ghost-ai/
 
 ---
 
+## Global Hotkey System
+
+Ghost AI uses a main-process `HotkeyManager` service around Electron's `globalShortcut` API. It owns validation, duplicate prevention, native registration, safe unregistration, persistence, logging, and event dispatch.
+
+### Folder Structure
+
+```
+src/main/hotkeys/
+├── hotkeyManager.js    # Global hotkey service
+├── hotkeyManager.d.ts  # TypeScript-facing public types
+└── settingsStore.js    # JSON persistence layer
+
+tests/
+└── hotkeyManager.test.js
+```
+
+### Architecture
+
+- `main.js` creates the manager after `app.whenReady()`, subscribes to `hotkey:pressed`, and routes actions such as `toggle-window`, `toggle-click-through`, and `quit-app`.
+- `src/main/hotkeys/hotkeyManager.js` exposes `registerHotkey()`, `unregisterHotkey()`, `updateHotkey()`, and `getRegisteredHotkeys()`.
+- `src/main/hotkeys/settingsStore.js` persists shortcuts as JSON at Electron `app.getPath('userData')/hotkeys.json`.
+- `preload.js` exposes a narrow `window.ghostAI.hotkeys` IPC API to the renderer.
+- `src/index.html` renders the settings UI and subscribes to hotkey events for renderer-owned actions such as `focus-chat`, `open-settings`, and `new-chat`.
+
+### Usage Examples
+
+Add a new feature action in `HOTKEY_ACTIONS`:
+
+```js
+const HOTKEY_ACTIONS = Object.freeze({
+  'open-settings': 'Open Settings',
+  'my-feature': 'My Feature',
+});
+```
+
+Handle main-process behavior in `handleHotkeyAction()`:
+
+```js
+case 'my-feature':
+  showAndFocusWindow();
+  break;
+```
+
+Subscribe in the renderer for UI behavior:
+
+```js
+window.ghostAI.hotkeys.onEvent(hotkey => {
+  if (hotkey.action === 'my-feature') {
+    // Run feature UI behavior here.
+  }
+});
+```
+
+### Validation and Fallback
+
+The manager normalizes shortcuts such as `ctrl + shift + k` to `Ctrl+Shift+K`, rejects invalid combinations, prevents duplicate assignments, and disables a shortcut with an inline error if the OS or another application rejects registration.
+
+### Testing Strategy
+
+Run:
+
+```bash
+npm test
+```
+
+Tests use Node's built-in test runner with a fake `globalShortcut` and in-memory settings store. Coverage focuses on normalization, invalid shortcuts, duplicate prevention, custom registration/removal, event emission, persistence, and failed native registration fallback.
+
+---
+
+## Tray and Process Identity
+
+Ghost AI is configured for a normal packaged desktop identity:
+
+- `app.setName('Ghost AI')` and `app.setAppUserModelId('com.ghost.ai')` are set in the main process.
+- `electron-builder` uses `productName` and `executableName` of `Ghost AI`.
+- The window uses `skipTaskbar: true`, close/minimize hide the window, and the tray menu provides Show/Hide, Click-through, Settings, and Quit.
+- A small tray icon is included at `assets/tray.svg`; real platform icons can be added later under `assets/icon.ico`, `assets/icon.icns`, and `assets/icon.png`.
+
+This does not hide the app from Task Manager or process-management tools. It only presents the app as a normal packaged app and removes the visible taskbar window.
+
+---
+
 ## ⚡ Tips
 
 - **Opacity slider** at the bottom of chat lets you make it semi-transparent so you can read what's behind it
 - Your API key is saved in `localStorage` — it persists between sessions
-- Click ⚙ to go back to settings and change model/key without restarting
+- Click ⚙ or use the tray menu to go back to settings and change model/key without restarting
 - The window is **resizable** — drag the edges
 
 ---
