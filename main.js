@@ -10,6 +10,23 @@ const APP_ID = 'com.ghost.ai';
 app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
+// Prevent multiple instances (avoids cache lock errors)
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+// Fix GPU cache "Access is denied" errors on Windows
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+app.commandLine.appendSwitch('disk-cache-size', '0');
+
 let mainWindow;
 let tray;
 let clickThrough = false;
@@ -267,11 +284,31 @@ ipcMain.handle('validate-key', async (event, { provider, apiKey, model }) => {
 });
 
 // ── CHAT ──
+let currentChatAbort = null;
+
 ipcMain.handle('ai-chat', async (event, { provider, apiKey, messages, model, systemPrompt }) => {
-  return await callAI(provider, apiKey, model, messages, systemPrompt, false);
+  if (currentChatAbort) currentChatAbort.abort();
+  const abort = new AbortController();
+  currentChatAbort = abort;
+  try {
+    const result = await callAI(provider, apiKey, model, messages, systemPrompt, false, abort.signal);
+    return result;
+  } catch (e) {
+    if (e.name === 'AbortError') return { success: false, error: 'stopped', aborted: true };
+    return { success: false, error: e.message };
+  } finally {
+    if (currentChatAbort === abort) currentChatAbort = null;
+  }
 });
 
-async function callAI(provider, apiKey, model, messages, systemPrompt, isTest) {
+ipcMain.on('ai-chat-abort', () => {
+  if (currentChatAbort) {
+    currentChatAbort.abort();
+    currentChatAbort = null;
+  }
+});
+
+async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, signal) {
 
   // ── ANTHROPIC ──
   if (provider === 'anthropic') {
@@ -281,6 +318,7 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify(body),
+      signal,
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
@@ -301,6 +339,7 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({ model, messages: msgs, max_tokens: isTest ? 10 : 2048 }),
+      signal,
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
@@ -325,7 +364,7 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest) {
     if (systemPrompt) body.systemInstruction = { parts: [{ text: systemPrompt }] };
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }
     );
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
@@ -348,6 +387,7 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({ model, messages: msgs, max_tokens: isTest ? 10 : 2048 }),
+      signal,
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));

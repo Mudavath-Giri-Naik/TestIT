@@ -533,6 +533,28 @@
     #send-btn:hover { transform: scale(1.07); box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 32%, transparent); }
     #send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
     #send-btn svg { width: 15px; height: 15px; }
+
+    #stop-btn {
+      width: 36px; height: 36px; flex-shrink: 0;
+      background: rgba(255, 107, 107, 0.15);
+      border: 1.5px solid rgba(255, 107, 107, 0.5);
+      border-radius: 9px; cursor: pointer;
+      display: none; align-items: center; justify-content: center;
+      transition: all 0.15s; color: var(--danger);
+      animation: stopPulse 1.5s ease-in-out infinite;
+    }
+    #stop-btn:hover {
+      background: rgba(255, 107, 107, 0.25);
+      border-color: var(--danger);
+      transform: scale(1.07);
+      box-shadow: 0 4px 16px rgba(255, 107, 107, 0.25);
+    }
+    #stop-btn svg { width: 14px; height: 14px; }
+    #stop-btn.visible { display: flex; }
+    @keyframes stopPulse {
+      0%, 100% { border-color: rgba(255, 107, 107, 0.5); }
+      50% { border-color: rgba(255, 107, 107, 0.9); }
+    }
   </style>
 </head>
 <body>
@@ -689,6 +711,11 @@
           <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
         </svg>
       </button>
+      <button id="stop-btn" title="Stop generating">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -773,6 +800,7 @@ const chatView       = $('chat-view');
 const messagesEl     = $('messages');
 const chatInput      = $('chat-input');
 const sendBtn        = $('send-btn');
+const stopBtn        = $('stop-btn');
 const tokenEl        = $('token-count');
 const pillText       = $('pill-text');
 const badge          = $('provider-badge');
@@ -1412,13 +1440,18 @@ function hideThinking() { const e = $('tind'); if (e) e.remove(); }
 async function send() {
   const txt = chatInput.value.trim();
   if (!txt || isTyping) return;
-  isTyping = true; sendBtn.disabled = true;
+  isTyping = true;
+  sendBtn.style.display = 'none';
+  stopBtn.classList.add('visible');
   chatInput.value = ''; chatInput.style.height = 'auto';
   addMsg(txt, 'user');
   history.push({ role: 'user', content: txt });
   showThinking();
   const res = await window.ghostAI.chat({ provider, apiKey, messages: history, model, systemPrompt });
   hideThinking();
+  stopBtn.classList.remove('visible');
+  sendBtn.style.display = 'flex';
+  sendBtn.disabled = false;
   if (res.success) {
     addMsg(res.content, 'ai');
     history.push({ role: 'assistant', content: res.content });
@@ -1426,12 +1459,20 @@ async function send() {
     const limit = getContextLimit(model);
     const left = Math.max(0, limit - tokens);
     tokenEl.textContent = `tokens left: ${left.toLocaleString()}`;
+  } else if (res.aborted) {
+    addMsg('⏹ Generation stopped.', 'system');
+    history.pop();
   } else {
     addMsg(`⚠ ${res.error}`, 'error');
     history.pop();
   }
-  isTyping = false; sendBtn.disabled = false; chatInput.focus();
+  isTyping = false; chatInput.focus();
 }
+
+stopBtn.addEventListener('click', () => {
+  if (!isTyping) return;
+  window.ghostAI.abortChat();
+});
 
 // ═══════════════════════════════════════════════
 //  AUTO-START: skip setup if settings are saved & verified
