@@ -51,7 +51,7 @@ function showAndFocusWindow() {
 function toggleWindowVisibility() {
   if (!mainWindow) return;
   if (mainWindow.isVisible()) mainWindow.hide();
-  else showAndFocusWindow();
+  else mainWindow.showInactive();
   updateTrayMenu();
 }
 
