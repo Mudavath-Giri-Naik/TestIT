@@ -625,6 +625,31 @@
       border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
       color: var(--accent); font-size: 10.5px; text-align: left;
     }
+
+    /* ── LIVE AGENT ── */
+    #listen-btn {
+      width: 36px; height: 36px; flex-shrink: 0;
+      background: var(--glass-light); border: 1px solid var(--glass-border);
+      border-radius: 9px; cursor: pointer; color: var(--text-dim);
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    #listen-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+    #listen-btn svg { width: 16px; height: 16px; }
+    #listen-btn.listening {
+      color: #07070e; border-color: transparent;
+      background: linear-gradient(135deg, #FF6B6B, #FBBF24);
+      animation: listenPulse 1.4s ease-in-out infinite;
+    }
+    @keyframes listenPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,107,0.5); }
+      50% { box-shadow: 0 0 0 6px rgba(255,107,107,0); }
+    }
+    #listen-status {
+      font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-dim);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
+    }
+    #listen-status.active { color: #FF8A8A; }
   </style>
 </head>
 <body>
@@ -790,8 +815,16 @@
     <div id="messages"></div>
     <div class="bottom-strip">
       <span class="tok" id="token-count"></span>
+      <span id="listen-status"></span>
     </div>
     <div id="input-area">
+      <button id="listen-btn" title="Live Agent — listen to computer audio and auto-answer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+        </svg>
+      </button>
       <button id="mem-mode-btn" title="Memory Mode — tell me what to remember, change, or forget">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2a4 4 0 0 0-4 4 3.5 3.5 0 0 0-2 6.3A3.5 3.5 0 0 0 8 19a3 3 0 0 0 4 1 3 3 0 0 0 4-1 3.5 3.5 0 0 0 2-6.7A3.5 3.5 0 0 0 16 6a4 4 0 0 0-4-4z"></path>
@@ -930,6 +963,8 @@ const memoryClearBtn = $('memory-clear-btn');
 const memorySaveMsg  = $('memory-save-msg');
 const memModeBtn     = $('mem-mode-btn');
 const inputArea      = $('input-area');
+const listenBtn      = $('listen-btn');
+const listenStatus   = $('listen-status');
 const tokenEl        = $('token-count');
 const pillText       = $('pill-text');
 const badge          = $('provider-badge');
@@ -1460,6 +1495,7 @@ async function enterChat(sessionId = null) {
   localStorage.setItem('ghost_system', systemPrompt);
   localStorage.setItem('ghost_auto_start', '1');
 
+  if (listening) stopListening();
   history = []; tokens = 0;
   messagesEl.innerHTML = '';
   setupPanel.style.display = 'none';
@@ -1516,6 +1552,7 @@ startBtn.addEventListener('click', () => {
 // ── back to settings ──
 function openSettings() {
   if (chatView.style.display !== 'none' || historyPanel.style.display !== 'none' || memoryPanel.style.display !== 'none') {
+    if (listening) stopListening();
     chatView.style.display = 'none';
     historyPanel.style.display = 'none';
     memoryPanel.style.display = 'none';
@@ -1688,6 +1725,22 @@ function showThinking() {
 }
 function hideThinking() { const e = $('tind'); if (e) e.remove(); }
 
+// Groq's free tier caps tokens per minute (12k on llama-3.3-70b), and the persona
+// + memory already consume part of every request — so only send the most recent
+// slice of the conversation instead of the whole session (~4 chars ≈ 1 token).
+const HISTORY_TOKEN_BUDGET = 4000;
+function trimmedHistory() {
+  const budgetChars = HISTORY_TOKEN_BUDGET * 4;
+  let used = 0, start = history.length;
+  while (start > 0 && used + history[start - 1].content.length <= budgetChars) {
+    used += history[start - 1].content.length;
+    start--;
+  }
+  if (start === history.length) start = history.length - 1; // latest message always goes, even if oversized
+  while (start < history.length - 1 && history[start].role !== 'user') start++; // some APIs require the first message to be from the user
+  return history.slice(start);
+}
+
 async function send() {
   const txt = chatInput.value.trim();
   if (!txt || isTyping) return;
@@ -1707,7 +1760,7 @@ async function send() {
   // Build the clone persona + inject memory behind the scenes
   let activeSystemPrompt = buildPersonaPrompt();
 
-  const res = await window.ghostAI.chat({ provider, apiKey, messages: history, model, systemPrompt: activeSystemPrompt });
+  const res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: activeSystemPrompt });
   hideThinking();
   stopBtn.classList.remove('visible');
   sendBtn.style.display = 'flex';
@@ -1820,6 +1873,166 @@ function parseMemoryEdit(raw) {
 }
 
 memModeBtn.addEventListener('click', () => setMemMode(!memMode));
+
+// ═══════════════════════════════════════════════
+//  LIVE AGENT — listen to system audio, auto-answer
+// ═══════════════════════════════════════════════
+let listening = false;
+let laStream = null, laCtx = null, laAnalyser = null, laRecorder = null;
+let laChunks = [], laProcessing = false, laHadSpeech = false;
+let laSilenceStart = 0, laSpeechStart = 0, laRaf = null;
+
+const LA = { SPEAK: 0.014, SILENCE_HOLD: 1200, MIN_SPEECH: 400, MIN_BYTES: 2400 };
+
+function setListenStatus(text, active) {
+  listenStatus.textContent = text || '';
+  listenStatus.classList.toggle('active', !!active);
+}
+
+function pickAudioMime() {
+  const prefs = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+  for (const m of prefs) { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; }
+  return '';
+}
+
+async function toggleListen() {
+  if (listening) { stopListening(); return; }
+  if (provider !== 'groq') {
+    addMsg('⚠ Live Agent transcribes with Groq Whisper — set your provider to Groq in Settings to use it.', 'error');
+    return;
+  }
+  if (!apiKey) { addMsg('⚠ Connect your Groq key first.', 'error'); return; }
+  try {
+    const disp = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    disp.getVideoTracks().forEach(t => t.stop()); // audio only
+    const audioTracks = disp.getAudioTracks();
+    if (!audioTracks.length) {
+      disp.getTracks().forEach(t => t.stop());
+      addMsg('⚠ No system audio captured. Make sure something is playing and that audio sharing is allowed.', 'error');
+      return;
+    }
+    laStream = new MediaStream(audioTracks);
+    laCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = laCtx.createMediaStreamSource(laStream);
+    laAnalyser = laCtx.createAnalyser();
+    laAnalyser.fftSize = 1024;
+    src.connect(laAnalyser);
+    audioTracks[0].onended = () => stopListening(); // user stopped the share
+    listening = true;
+    listenBtn.classList.add('listening');
+    listenBtn.title = 'Live Agent ON — click to stop';
+    addMsg('🎧 Live Agent on — listening to computer audio. I\'ll answer each question automatically.', 'system');
+    beginTurn();
+    monitorLoop();
+  } catch (e) {
+    addMsg('⚠ Could not start Live Agent: ' + e.message, 'error');
+    stopListening();
+  }
+}
+
+function beginTurn() {
+  if (!listening || !laStream) return;
+  laChunks = []; laHadSpeech = false; laSilenceStart = 0; laSpeechStart = 0; laProcessing = false;
+  try {
+    const mime = pickAudioMime();
+    laRecorder = new MediaRecorder(laStream, mime ? { mimeType: mime } : undefined);
+  } catch (e) {
+    addMsg('⚠ Recorder failed: ' + e.message, 'error'); stopListening(); return;
+  }
+  laRecorder.ondataavailable = e => { if (e.data && e.data.size) laChunks.push(e.data); };
+  laRecorder.onstop = onTurnEnd;
+  laRecorder.start();
+  setListenStatus('listening…', true);
+}
+
+function monitorLoop() {
+  const buf = new Uint8Array(laAnalyser.fftSize);
+  const tick = () => {
+    if (!listening) return;
+    laAnalyser.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+    const rms = Math.sqrt(sum / buf.length);
+    const now = performance.now();
+    if (!laProcessing) {
+      if (rms > LA.SPEAK) {
+        if (!laHadSpeech) { laHadSpeech = true; laSpeechStart = now; setListenStatus('hearing…', true); }
+        laSilenceStart = 0;
+      } else if (laHadSpeech) {
+        if (!laSilenceStart) laSilenceStart = now;
+        else if (now - laSilenceStart > LA.SILENCE_HOLD && now - laSpeechStart > LA.MIN_SPEECH) {
+          endTurn();
+        }
+      }
+    }
+    laRaf = requestAnimationFrame(tick);
+  };
+  laRaf = requestAnimationFrame(tick);
+}
+
+function endTurn() {
+  laProcessing = true;
+  if (laRecorder && laRecorder.state === 'recording') laRecorder.stop();
+}
+
+async function onTurnEnd() {
+  const type = (laRecorder && laRecorder.mimeType) || 'audio/webm';
+  const blob = new Blob(laChunks, { type });
+  if (!laHadSpeech || blob.size < LA.MIN_BYTES) {
+    if (listening) beginTurn();
+    return;
+  }
+  setListenStatus('transcribing…', true);
+  try {
+    const arrayBuf = await blob.arrayBuffer();
+    const res = await window.ghostAI.transcribe({ apiKey, buffer: arrayBuf, mimeType: type });
+    if (res.success && res.text && res.text.trim().length > 1) {
+      setListenStatus('answering…', true);
+      await answerFromVoice(res.text.trim());
+    } else if (res.error) {
+      setListenStatus('stt error: ' + res.error, true);
+    }
+  } catch (e) {
+    setListenStatus('error: ' + e.message, true);
+  }
+  if (listening) beginTurn();
+}
+
+async function answerFromVoice(txt) {
+  addMsg(txt, 'user');
+  history.push({ role: 'user', content: txt });
+  window.ghostAI.db.addMessage(currentSessionId, 'user', txt);
+  showThinking();
+  let res;
+  try {
+    res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: buildPersonaPrompt() });
+  } catch (e) { res = { success: false, error: e.message }; }
+  hideThinking();
+  if (res.success) {
+    addMsg(res.content, 'ai');
+    history.push({ role: 'assistant', content: res.content });
+    window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
+    tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
+    tokenEl.textContent = `tokens left: ${Math.max(0, getContextLimit(model) - tokens).toLocaleString()}`;
+  } else if (!res.aborted) {
+    addMsg(`⚠ ${res.error}`, 'error');
+    history.pop();
+  }
+}
+
+function stopListening() {
+  listening = false;
+  if (laRaf) cancelAnimationFrame(laRaf), laRaf = null;
+  try { if (laRecorder && laRecorder.state !== 'inactive') laRecorder.stop(); } catch (e) {}
+  if (laStream) { laStream.getTracks().forEach(t => t.stop()); laStream = null; }
+  if (laCtx) { laCtx.close().catch(() => {}); laCtx = null; }
+  laRecorder = null; laAnalyser = null; laChunks = []; laProcessing = false;
+  listenBtn.classList.remove('listening');
+  listenBtn.title = 'Live Agent — listen to computer audio and auto-answer';
+  setListenStatus('');
+}
+
+listenBtn.addEventListener('click', toggleListen);
 
 stopBtn.addEventListener('click', () => {
   if (!isTyping) return;

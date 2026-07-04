@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, screen, Menu, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, screen, Menu, Tray, nativeImage, desktopCapturer, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const db = require('./src/main/database');
@@ -229,6 +229,14 @@ app.whenReady().then(() => {
 
   db.init();
   createHotkeyManager();
+
+  // Allow the renderer to capture system/computer audio (loopback) for the live agent.
+  // On Windows, audio: 'loopback' captures what's playing on the machine (e.g. a call).
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      callback({ video: sources[0], audio: 'loopback' });
+    }).catch(() => callback({}));
+  }, { useSystemPicker: false });
 });
 
 app.on('before-quit', () => {
@@ -330,6 +338,36 @@ ipcMain.on('ai-chat-abort', () => {
   if (currentChatAbort) {
     currentChatAbort.abort();
     currentChatAbort = null;
+  }
+});
+
+// ── LIVE AGENT: transcribe an audio chunk via Groq Whisper ──
+ipcMain.handle('transcribe-audio', async (event, { apiKey, buffer, mimeType }) => {
+  try {
+    if (!apiKey) return { success: false, error: 'Missing Groq API key for transcription.' };
+    const ext = (mimeType && mimeType.includes('wav')) ? 'wav' : 'webm';
+    const form = new FormData();
+    form.append('file', new Blob([buffer], { type: mimeType || 'audio/webm' }), `chunk.${ext}`);
+    form.append('model', 'whisper-large-v3-turbo');
+    form.append('response_format', 'json');
+    form.append('temperature', '0');
+
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      const msg = e.error?.message || '';
+      if (res.status === 401) throw new Error('Invalid Groq API key for transcription.');
+      if (res.status === 429) throw new Error('Groq rate limit hit while transcribing.');
+      throw new Error(`Transcription HTTP ${res.status}: ${msg}`);
+    }
+    const data = await res.json();
+    return { success: true, text: (data.text || '').trim() };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 });
 

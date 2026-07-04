@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('ghostAI', {
   chat: (opts) => ipcRenderer.invoke('ai-chat', opts),
   abortChat: () => ipcRenderer.send('ai-chat-abort'),
+  transcribe: (opts) => ipcRenderer.invoke('transcribe-audio', opts),
   validateKey: (opts) => ipcRenderer.invoke('validate-key', opts),
   setClickThrough: (enabled) => ipcRenderer.invoke('set-click-through', enabled),
   db: {
