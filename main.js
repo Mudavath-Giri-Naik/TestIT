@@ -19,7 +19,7 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => {
     if (mainWindow) {
-      if (!mainWindow.isVisible()) mainWindow.show();
+      if (!mainWindow.isVisible()) mainWindow.showInactive();
       mainWindow.focus();
     }
   });
@@ -45,7 +45,7 @@ function setClickThrough(enabled) {
 
 function showAndFocusWindow() {
   if (!mainWindow) return;
-  if (!mainWindow.isVisible()) mainWindow.show();
+  if (!mainWindow.isVisible()) mainWindow.showInactive();
   mainWindow.focus();
 }
 
@@ -239,19 +239,34 @@ function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
   mainWindow = new BrowserWindow({
-    width: 420, height: 640,
-    x: width - 440, y: 80,
-    transparent: true, frame: false,
+    width: 420,
+    height: 640,
+    x: width - 440,
+    y: 80,
+    transparent: true,
+    frame: false,
     backgroundColor: '#00000000',
-    alwaysOnTop: true, visibleOnAllWorkspaces: true,
-    type: 'panel', skipTaskbar: true,
+    alwaysOnTop: true,
+    visibleOnAllWorkspaces: true,
+    type: 'panel',
+    skipTaskbar: true,
+    
+    // --- ADD THESE THREE LINES TO PREVENT FOCUS STEALING ---
+    focusable: false,       // Stops the window from stealing focus when clicked
+    acceptFirstMouse: true, // Allows buttons inside to be clicked instantly
+    hasShadow: false,       // Optional: helps non-focusable panels render cleanly
+    
     webPreferences: {
-      nodeIntegration: false, contextIsolation: true,
+      nodeIntegration: false,
+      contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
-    roundedCorners: true, hasShadow: true,
-    resizable: true, minWidth: 340, minHeight: 420,
+    roundedCorners: true,
+    resizable: true,
+    minWidth: 340,
+    minHeight: 420,
   });
+
 
   mainWindow.setContentProtection(true);
   mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
