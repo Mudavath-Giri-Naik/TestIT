@@ -1,6 +1,6 @@
 {
   "name": "ghost-ai",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "productName": "Ghost AI",
   "description": "Transparent always-on-top AI chat assistant.",
   "main": "main.js",
