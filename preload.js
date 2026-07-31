@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('ghostAI', {
     addApiKey: (provider, label, keyValue, makeActive) => ipcRenderer.invoke('db:add-api-key', provider, label, keyValue, makeActive),
     setActiveApiKey: (id, provider) => ipcRenderer.invoke('db:set-active-api-key', id, provider),
     deleteApiKey: (id) => ipcRenderer.invoke('db:delete-api-key', id),
+    updateKeyRateLimit: (provider, keyValue, limit, remaining) => ipcRenderer.invoke('db:update-key-ratelimit', provider, keyValue, limit, remaining),
   },
   hotkeys: {
     getRegisteredHotkeys: () => ipcRenderer.invoke('hotkeys:get'),

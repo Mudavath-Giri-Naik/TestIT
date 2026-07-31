@@ -80,6 +80,9 @@ async function pushApiKey(row) {
   await withFallback(() => supabase.from('api_keys').upsert({
     id: row.id, provider: row.provider, label: row.label, key_value: row.key_value,
     is_active: !!row.is_active, created_at: row.created_at,
+    rl_limit_tokens: row.rl_limit_tokens ?? null,
+    rl_remaining_tokens: row.rl_remaining_tokens ?? null,
+    rl_updated_at: row.rl_updated_at ?? null,
   }));
 }
 

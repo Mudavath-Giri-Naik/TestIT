@@ -55,6 +55,19 @@ function init() {
     db.exec('ALTER TABLE sessions ADD COLUMN tokens_used INTEGER DEFAULT 0');
   }
 
+  // Migration: real per-key rate-limit quota (from the provider's own response headers),
+  // as opposed to sessions.tokens_used which is per-conversation context usage.
+  const apiKeyCols = db.prepare("PRAGMA table_info(api_keys)").all();
+  if (!apiKeyCols.some(c => c.name === 'rl_limit_tokens')) {
+    db.exec('ALTER TABLE api_keys ADD COLUMN rl_limit_tokens INTEGER');
+  }
+  if (!apiKeyCols.some(c => c.name === 'rl_remaining_tokens')) {
+    db.exec('ALTER TABLE api_keys ADD COLUMN rl_remaining_tokens INTEGER');
+  }
+  if (!apiKeyCols.some(c => c.name === 'rl_updated_at')) {
+    db.exec('ALTER TABLE api_keys ADD COLUMN rl_updated_at INTEGER');
+  }
+
   // Initialize core memory row if it doesn't exist
   const mem = db.prepare('SELECT core_memory FROM memory WHERE id = 1').get();
   if (!mem) {
@@ -139,6 +152,13 @@ function deleteApiKey(id) {
   db.prepare('DELETE FROM api_keys WHERE id = ?').run(id);
 }
 
+// Real quota reported by the provider itself (rate-limit response headers), keyed to
+// the actual API key value — persists across sessions/restarts, unlike sessions.tokens_used.
+function updateApiKeyRateLimit(provider, keyValue, limit, remaining) {
+  db.prepare('UPDATE api_keys SET rl_limit_tokens = ?, rl_remaining_tokens = ?, rl_updated_at = ? WHERE provider = ? AND key_value = ?')
+    .run(limit ?? null, remaining ?? null, Date.now(), provider, keyValue);
+}
+
 function getAllApiKeys() {
   return db.prepare('SELECT * FROM api_keys').all();
 }
@@ -155,8 +175,8 @@ function importMessage(sessionId, role, content, createdAt) {
 }
 
 function importApiKey(k) {
-  db.prepare('INSERT OR IGNORE INTO api_keys (id, provider, label, key_value, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(k.id, k.provider, k.label, k.key_value, k.is_active ? 1 : 0, k.created_at);
+  db.prepare('INSERT OR IGNORE INTO api_keys (id, provider, label, key_value, is_active, created_at, rl_limit_tokens, rl_remaining_tokens, rl_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(k.id, k.provider, k.label, k.key_value, k.is_active ? 1 : 0, k.created_at, k.rl_limit_tokens ?? null, k.rl_remaining_tokens ?? null, k.rl_updated_at ?? null);
 }
 
 module.exports = {
@@ -176,6 +196,7 @@ module.exports = {
   addApiKey,
   setActiveApiKey,
   deleteApiKey,
+  updateApiKeyRateLimit,
   getAllApiKeys,
   importSession,
   importMessage,

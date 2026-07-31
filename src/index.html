@@ -526,6 +526,37 @@
     .msg.ai h2 { font-size: 1.2em; }
     .msg.ai h3 { font-size: 1.1em; }
 
+    .msg-thumbs {
+      display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;
+    }
+    .msg-thumbs img {
+      width: 64px; height: 64px; object-fit: cover;
+      border-radius: 8px; border: 1px solid var(--glass-border);
+    }
+
+    #attachment-strip {
+      display: none;
+      flex-wrap: wrap; gap: 6px;
+      padding: 0 13px 6px;
+    }
+    #attachment-strip.visible { display: flex; }
+    .attachment-chip {
+      position: relative;
+      width: 44px; height: 44px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--glass-border);
+      flex-shrink: 0;
+    }
+    .attachment-chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .attachment-chip .remove-chip {
+      position: absolute; top: 1px; right: 1px;
+      width: 15px; height: 15px; border-radius: 50%;
+      background: rgba(0,0,0,0.65); color: #fff; border: none;
+      font-size: 9px; line-height: 15px; text-align: center;
+      cursor: pointer; padding: 0;
+    }
+
     .kw {
       cursor: pointer;
       border-radius: 3px;
@@ -931,6 +962,7 @@
       <span class="tok" id="token-count"></span>
       <span id="listen-status"></span>
     </div>
+    <div id="attachment-strip"></div>
     <div id="input-area">
       <button id="listen-btn" title="Live Agent — listen to computer audio and auto-answer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
@@ -1042,6 +1074,7 @@ const CFG = {
 let provider = localStorage.getItem('ghost_provider') || 'groq';
 let apiKey = '', model = '', systemPrompt = '';
 let history = [], isTyping = false, tokens = 0;
+let pendingImages = []; // screenshots staged for the next send, not sent yet
 let validated = false;
 let clickThrough = false;
 let bootstrapping = true;
@@ -1089,6 +1122,7 @@ const inputArea      = $('input-area');
 const listenBtn      = $('listen-btn');
 const listenStatus   = $('listen-status');
 const tokenEl        = $('token-count');
+const attachmentStrip = $('attachment-strip');
 const pillText       = $('pill-text');
 const badge          = $('provider-badge');
 const clickThroughBtn = $('click-through-btn');
@@ -1232,6 +1266,18 @@ function getContextLimit(mdl) {
 // Uses the real token count the provider reports for this call (accurate — reflects
 // exactly what's in the model's context window right now). Falls back to the old
 // chars/4 estimate only if a response comes back without usage data.
+// Debounced so rapid-fire responses don't hammer the DB — saves ~2s after the last update.
+let rlSaveTimer = null;
+function persistKeyRateLimit(prov, key, limit, remaining) {
+  clearTimeout(rlSaveTimer);
+  rlSaveTimer = setTimeout(() => {
+    window.ghostAI.db.updateKeyRateLimit(prov, key, limit, remaining);
+  }, 2000);
+}
+
+// "Tokens left" prefers the provider's own real remaining-quota headers (tied to the
+// API key, persists across sessions/restarts) over the chars/4-estimated context-window
+// fallback (which is inherently per-conversation and correctly resets on a new chat).
 function applyTokenUsage(res) {
   if (res && res.usage && typeof res.usage.totalTokens === 'number') {
     tokens = res.usage.totalTokens;
@@ -1239,6 +1285,28 @@ function applyTokenUsage(res) {
     tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
   }
   if (currentSessionId) window.ghostAI.db.updateSessionTokens(currentSessionId, tokens);
+
+  const rl = res && res.usage && res.usage.rateLimit;
+  if (rl && typeof rl.remaining === 'number') {
+    persistKeyRateLimit(provider, apiKey, rl.limit, rl.remaining);
+    tokenEl.textContent = `tokens left: ${rl.remaining.toLocaleString()}`;
+  } else {
+    const left = Math.max(0, getContextLimit(model) - tokens);
+    tokenEl.textContent = `tokens left: ${left.toLocaleString()}`;
+  }
+}
+
+// Restores the persisted per-key quota on load/resume instead of recomputing from
+// scratch — this is what makes tokens-left survive closing the app or starting a new chat.
+async function refreshTokensDisplay() {
+  try {
+    const res = await window.ghostAI.db.getApiKeys(provider);
+    const active = res && res.success ? res.data.find(k => k.is_active) : null;
+    if (active && active.rl_remaining_tokens !== null && active.rl_remaining_tokens !== undefined) {
+      tokenEl.textContent = `tokens left: ${Number(active.rl_remaining_tokens).toLocaleString()}`;
+      return;
+    }
+  } catch (e) {}
   const left = Math.max(0, getContextLimit(model) - tokens);
   tokenEl.textContent = `tokens left: ${left.toLocaleString()}`;
 }
@@ -1861,8 +1929,7 @@ async function enterChat(sessionId = null) {
 
   window.ghostAI.db.setLastSession(currentSessionId);
 
-  const limit = getContextLimit(model);
-  tokenEl.textContent = `tokens left: ${Math.max(0, limit - tokens).toLocaleString()}`;
+  refreshTokensDisplay();
   chatInput.focus();
 }
 
@@ -2096,13 +2163,23 @@ chatInput.addEventListener('keydown', e => {
 });
 sendBtn.addEventListener('click', send);
 
-function addMsg(text, role) {
+function addMsg(text, role, images) {
   const el = document.createElement('div');
   el.className = `msg ${role}`;
+  if (images && images.length) {
+    const thumbs = document.createElement('div');
+    thumbs.className = 'msg-thumbs';
+    images.forEach(src => {
+      const img = document.createElement('img');
+      img.src = src;
+      thumbs.appendChild(img);
+    });
+    el.appendChild(thumbs);
+  }
   if (role === 'ai' && typeof marked !== 'undefined') {
-    el.innerHTML = marked.parse(text);
-  } else {
-    el.textContent = text;
+    el.insertAdjacentHTML('beforeend', marked.parse(text));
+  } else if (text) {
+    el.appendChild(document.createTextNode(text));
   }
   if (role === 'ai' || role === 'user') makeWordsClickable(el);
   messagesEl.appendChild(el);
@@ -2151,77 +2228,58 @@ messagesEl.addEventListener('click', (e) => {
   askAboutKeyword(word, span);
 });
 
-// Shared core for both the click-a-keyword flow and the screenshot hotkey:
-// capture the screen, send it + an instruction to the AI, post the short answer.
-async function runScreenshotQuery(userLabel, apiInstruction, strictNote, busySpan) {
-  if (isTyping || memMode) return;
-  if (!apiKey || !model) { addMsg('⚠ Connect an AI provider first.', 'error'); return; }
+// Screenshots are staged, not sent immediately — lets you grab two or more
+// screenshots (and type your own prompt) before actually sending anything.
+function renderAttachmentStrip() {
+  attachmentStrip.innerHTML = '';
+  attachmentStrip.classList.toggle('visible', pendingImages.length > 0);
+  pendingImages.forEach((dataUrl, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'attachment-chip';
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'remove-chip';
+    remove.title = 'Remove screenshot';
+    remove.textContent = '✕';
+    remove.addEventListener('click', () => {
+      pendingImages.splice(i, 1);
+      renderAttachmentStrip();
+    });
+    chip.append(img, remove);
+    attachmentStrip.appendChild(chip);
+  });
+}
 
-  isTyping = true;
-  sendBtn.style.display = 'none';
-  stopBtn.classList.add('visible');
+async function stageScreenshot(busySpan) {
+  if (memMode) return;
+  if (chatView.style.display === 'none') return; // not connected yet — nowhere to attach it
   if (busySpan) busySpan.classList.add('kw-busy');
-
-  addMsg(userLabel, 'user');
-  history.push({ role: 'user', content: apiInstruction });
-  window.ghostAI.db.addMessage(currentSessionId, 'user', userLabel);
-
-  showThinking();
-
   try {
     const shot = await window.ghostAI.captureScreenshot();
     if (!shot.success) {
-      hideThinking();
       addMsg(`⚠ ${shot.error || 'Could not capture the screen.'}`, 'error');
-      history.pop();
       return;
     }
-
-    const strictPrompt = buildPersonaPrompt() + `\n\n[STRICT MODE]: ${strictNote} Answer in 1-3 short sentences MAX. Be direct, no preamble, no filler, straight to the point.`;
-
-    const res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: strictPrompt, image: shot.dataUrl });
-    hideThinking();
-    if (res.success) {
-      addMsg(res.content, 'ai');
-      history.push({ role: 'assistant', content: res.content });
-      window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
-      applyTokenUsage(res);
-    } else if (res.aborted) {
-      addMsg('⏹ Stopped.', 'system');
-      history.pop();
-    } else {
-      addMsg(`⚠ ${res.error}`, 'error');
-      history.pop();
-    }
-  } catch (e) {
-    hideThinking();
-    addMsg(`⚠ ${e.message}`, 'error');
-    history.pop();
+    pendingImages.push(shot.dataUrl);
+    renderAttachmentStrip();
+    chatInput.focus();
   } finally {
     if (busySpan) busySpan.classList.remove('kw-busy');
-    stopBtn.classList.remove('visible');
-    sendBtn.style.display = 'flex';
-    isTyping = false;
   }
 }
 
+// Clicking a word stages a screenshot and drops the word into the input as a
+// starting point — edit or replace it with your own prompt before sending.
 function askAboutKeyword(word, span) {
-  return runScreenshotQuery(
-    `📸 ${word}`,
-    `[Screenshot attached] Briefly explain or answer, using what's visible on my screen for context: "${word}"`,
-    `I just clicked the word "${word}" while looking at my screen — the attached screenshot is what I'm seeing right now. Use it for context if relevant to "${word}".`,
-    span
-  );
+  if (!chatInput.value.trim()) chatInput.value = word;
+  return stageScreenshot(span);
 }
 
-// Triggered by the Screenshot & Ask AI hotkey (default Ctrl+Shift+S) — no specific word, just "what's on screen".
+// Triggered by the Screenshot & Ask AI hotkey (default Ctrl+Shift+S).
 function triggerScreenshotAsk() {
-  if (chatView.style.display === 'none') return; // not connected yet — nowhere to show the answer
-  return runScreenshotQuery(
-    '📸 Screenshot',
-    `[Screenshot attached] Look at what's on my screen right now. If there's a visible question, problem, or task, answer it directly. Otherwise, briefly note what's relevant.`,
-    `I just pressed the screenshot hotkey — the attached image is my screen right now. If there's a clear question or problem visible, answer it straight; otherwise briefly note what's relevant.`
-  );
+  return stageScreenshot();
 }
 
 function showThinking() {
@@ -2250,24 +2308,29 @@ function trimmedHistory() {
 
 async function send() {
   const txt = chatInput.value.trim();
-  if (!txt || isTyping) return;
+  const images = pendingImages.slice();
+  if ((!txt && !images.length) || isTyping) return;
   if (memMode) { handleMemoryEdit(txt); return; }
   isTyping = true;
   sendBtn.style.display = 'none';
   stopBtn.classList.add('visible');
   chatInput.value = ''; chatInput.style.height = 'auto';
-  addMsg(txt, 'user');
-  history.push({ role: 'user', content: txt });
-  
+  pendingImages = [];
+  renderAttachmentStrip();
+
+  const label = txt || `📸 ${images.length} screenshot${images.length > 1 ? 's' : ''}`;
+  addMsg(label, 'user', images);
+  history.push({ role: 'user', content: txt || `[${images.length} screenshot(s) attached] Look at the screen and help with what's relevant.` });
+
   // Save to DB
-  window.ghostAI.db.addMessage(currentSessionId, 'user', txt);
+  window.ghostAI.db.addMessage(currentSessionId, 'user', label);
 
   showThinking();
-  
+
   // Build the clone persona + inject memory behind the scenes
   let activeSystemPrompt = buildPersonaPrompt();
 
-  const res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: activeSystemPrompt });
+  const res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: activeSystemPrompt, images });
   hideThinking();
   stopBtn.classList.remove('visible');
   sendBtn.style.display = 'flex';

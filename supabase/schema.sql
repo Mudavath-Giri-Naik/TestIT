@@ -34,8 +34,14 @@ create table if not exists api_keys (
   label text not null,
   key_value text not null,
   is_active boolean default false,
-  created_at bigint
+  created_at bigint,
+  rl_limit_tokens bigint,
+  rl_remaining_tokens bigint,
+  rl_updated_at bigint
 );
+alter table api_keys add column if not exists rl_limit_tokens bigint;
+alter table api_keys add column if not exists rl_remaining_tokens bigint;
+alter table api_keys add column if not exists rl_updated_at bigint;
 
 create table if not exists app_state (
   user_id uuid primary key default auth.uid(),

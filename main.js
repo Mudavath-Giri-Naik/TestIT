@@ -436,6 +436,14 @@ ipcMain.handle('db:delete-api-key', (event, id) => {
     return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
 });
+ipcMain.handle('db:update-key-ratelimit', (event, provider, keyValue, limit, remaining) => {
+  try {
+    db.updateApiKeyRateLimit(provider, keyValue, limit, remaining);
+    const row = db.getApiKeys(provider).find(k => k.key_value === keyValue);
+    if (row) supabaseSync.pushApiKey(row);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
 
 // ── VALIDATE API KEY (test call) ──
 ipcMain.handle('hotkeys:get', () => {
@@ -478,12 +486,12 @@ ipcMain.handle('validate-key', async (event, { provider, apiKey, model }) => {
 // ── CHAT ──
 let currentChatAbort = null;
 
-ipcMain.handle('ai-chat', async (event, { provider, apiKey, messages, model, systemPrompt, image }) => {
+ipcMain.handle('ai-chat', async (event, { provider, apiKey, messages, model, systemPrompt, images }) => {
   if (currentChatAbort) currentChatAbort.abort();
   const abort = new AbortController();
   currentChatAbort = abort;
   try {
-    const result = await callAI(provider, apiKey, model, messages, systemPrompt, false, abort.signal, image);
+    const result = await callAI(provider, apiKey, model, messages, systemPrompt, false, abort.signal, images);
     return result;
   } catch (e) {
     if (e.name === 'AbortError') return { success: false, error: 'stopped', aborted: true };
@@ -537,17 +545,37 @@ function parseDataUrl(dataUrl) {
   return { mimeType: match[1], base64: match[2] };
 }
 
-async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, signal, image) {
-  const imageData = image ? parseDataUrl(image) : null;
+// Reads the provider's own real remaining-quota headers when it reports them, instead
+// of estimating. Groq and Anthropic document these; Gemini has no equivalent header,
+// so it stays null there and the renderer falls back to context-window tracking.
+function extractRateLimit(res, provider) {
+  const h = res.headers;
+  let limit = null, remaining = null;
+  if (provider === 'groq' || provider === 'grok') {
+    limit = h.get('x-ratelimit-limit-tokens');
+    remaining = h.get('x-ratelimit-remaining-tokens');
+  } else if (provider === 'anthropic') {
+    remaining = h.get('anthropic-ratelimit-tokens-remaining') || h.get('anthropic-ratelimit-input-tokens-remaining');
+    limit = h.get('anthropic-ratelimit-tokens-limit') || h.get('anthropic-ratelimit-input-tokens-limit');
+  }
+  const remainingNum = remaining !== null ? parseInt(remaining, 10) : NaN;
+  if (Number.isNaN(remainingNum)) return null;
+  const limitNum = limit !== null ? parseInt(limit, 10) : NaN;
+  return { limit: Number.isNaN(limitNum) ? null : limitNum, remaining: remainingNum };
+}
 
-  // Attaches the screenshot to the last (user) message in OpenAI-compatible content-array form.
+async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, signal, images) {
+  const imageList = (Array.isArray(images) ? images : []).map(parseDataUrl).filter(Boolean);
+  const rawImages = Array.isArray(images) ? images : [];
+
+  // Attaches the screenshot(s) to the last (user) message in OpenAI-compatible content-array form.
   function withImageOpenAIStyle(msgs) {
-    if (!imageData || !msgs.length) return msgs;
+    if (!rawImages.length || !msgs.length) return msgs;
     const cloned = msgs.map(m => ({ ...m }));
     const last = cloned[cloned.length - 1];
     if (last.role !== 'user') return cloned;
     last.content = [
-      { type: 'image_url', image_url: { url: image } },
+      ...rawImages.map(url => ({ type: 'image_url', image_url: { url } })),
       { type: 'text', text: last.content },
     ];
     return cloned;
@@ -556,12 +584,12 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
   // ── ANTHROPIC ──
   if (provider === 'anthropic') {
     let msgs = messages;
-    if (imageData && msgs.length) {
+    if (imageList.length && msgs.length) {
       msgs = msgs.map(m => ({ ...m }));
       const last = msgs[msgs.length - 1];
       if (last.role === 'user') {
         last.content = [
-          { type: 'image', source: { type: 'base64', media_type: imageData.mimeType, data: imageData.base64 } },
+          ...imageList.map(img => ({ type: 'image', source: { type: 'base64', media_type: img.mimeType, data: img.base64 } })),
           { type: 'text', text: last.content },
         ];
       }
@@ -583,7 +611,10 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
       throw new Error(`HTTP ${res.status}: ${msg}`);
     }
     const data = await res.json();
-    const usage = data.usage ? { totalTokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0) } : null;
+    const usage = {
+      totalTokens: data.usage ? (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0) : null,
+      rateLimit: extractRateLimit(res, provider),
+    };
     return { success: true, content: data.content[0].text, usage };
   }
 
@@ -607,7 +638,10 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
       throw new Error(`HTTP ${res.status}: ${msg}`);
     }
     const data = await res.json();
-    const usage = data.usage ? { totalTokens: data.usage.total_tokens } : null;
+    const usage = {
+      totalTokens: data.usage ? data.usage.total_tokens : null,
+      rateLimit: extractRateLimit(res, provider),
+    };
     return { success: true, content: data.choices[0].message.content, usage };
   }
 
@@ -615,8 +649,8 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
   if (provider === 'gemini') {
     const contents = messages.map((m, i) => {
       const parts = [{ text: m.content }];
-      if (imageData && i === messages.length - 1 && m.role === 'user') {
-        parts.unshift({ inlineData: { mimeType: imageData.mimeType, data: imageData.base64 } });
+      if (imageList.length && i === messages.length - 1 && m.role === 'user') {
+        parts.unshift(...imageList.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.base64 } })));
       }
       return {
         role: m.role === 'assistant' ? 'model' : 'user',
@@ -640,7 +674,9 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error('Empty response — model may have blocked the message.');
-    const usage = data.usageMetadata ? { totalTokens: data.usageMetadata.totalTokenCount } : null;
+    // Gemini doesn't expose a remaining-quota response header, so rateLimit stays null
+    // here and the renderer falls back to context-window tracking for this provider.
+    const usage = { totalTokens: data.usageMetadata ? data.usageMetadata.totalTokenCount : null, rateLimit: null };
     return { success: true, content: text, usage };
   }
 
@@ -662,7 +698,13 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
       throw new Error(`HTTP ${res.status}: ${msg}`);
     }
     const data = await res.json();
-    const usage = data.usage ? { totalTokens: data.usage.total_tokens } : null;
+    // xAI hasn't documented a remaining-quota header the way Groq/Anthropic do — this
+    // attempts the same OpenAI-style header name on the chance it's supported, and
+    // falls back to context-window tracking (via extractRateLimit returning null) if not.
+    const usage = {
+      totalTokens: data.usage ? data.usage.total_tokens : null,
+      rateLimit: extractRateLimit(res, provider),
+    };
     return { success: true, content: data.choices[0].message.content, usage };
   }
 
