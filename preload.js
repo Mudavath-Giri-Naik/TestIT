@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld('ghostAI', {
     deleteSession: (id) => ipcRenderer.invoke('db:delete-session', id),
     getMemory: () => ipcRenderer.invoke('db:get-memory'),
     updateMemory: (text) => ipcRenderer.invoke('db:update-memory', text),
+    updateSessionTokens: (sessionId, tokens) => ipcRenderer.invoke('db:update-session-tokens', sessionId, tokens),
+    getLastSession: () => ipcRenderer.invoke('db:get-last-session'),
+    setLastSession: (sessionId) => ipcRenderer.invoke('db:set-last-session', sessionId),
+    getApiKeys: (provider) => ipcRenderer.invoke('db:get-api-keys', provider),
+    addApiKey: (provider, label, keyValue, makeActive) => ipcRenderer.invoke('db:add-api-key', provider, label, keyValue, makeActive),
+    setActiveApiKey: (id, provider) => ipcRenderer.invoke('db:set-active-api-key', id, provider),
+    deleteApiKey: (id) => ipcRenderer.invoke('db:delete-api-key', id),
   },
   hotkeys: {
     getRegisteredHotkeys: () => ipcRenderer.invoke('hotkeys:get'),

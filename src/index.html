@@ -844,6 +844,19 @@
       <div class="key-help" id="key-help"></div>
     </div>
 
+    <!-- Saved API keys (multiple per provider, manual switch) -->
+    <div class="hotkey-panel">
+      <div class="hotkey-head">
+        <div>
+          <div class="lbl">Saved Keys</div>
+          <div class="key-help">Store more than one key for this provider and switch which is active.</div>
+        </div>
+        <button type="button" class="mini-btn primary" id="add-apikey-btn">+ Add</button>
+      </div>
+      <div class="hotkey-list" id="apikey-list"></div>
+      <div class="hotkey-msg" id="apikey-msg"></div>
+    </div>
+
     <!-- System prompt -->
     <div class="row">
       <div class="lbl">System Prompt <span style="opacity:0.45">(optional)</span></div>
@@ -1082,6 +1095,9 @@ const clickThroughBtn = $('click-through-btn');
 const hotkeyList     = $('hotkey-list');
 const addHotkeyBtn   = $('add-hotkey-btn');
 const hotkeyGlobalMsg = $('hotkey-global-msg');
+const apikeyList     = $('apikey-list');
+const addApikeyBtn   = $('add-apikey-btn');
+const apikeyMsg      = $('apikey-msg');
 
 let hotkeys = [];
 let hotkeyActions = {};
@@ -1131,13 +1147,11 @@ function shouldAutoStart() {
 // ═══════════════════════════════════════════════
 //  APPLY PROVIDER
 // ═══════════════════════════════════════════════
-function applyProvider(p) {
+async function applyProvider(p) {
   provider = p;
   const c = CFG[p];
   document.documentElement.style.setProperty('--accent', c.accent);
   document.documentElement.style.setProperty('--accent2', c.accent2);
-  badge.style.background = c.accent;
-  badge.style.boxShadow = `0 0 6px ${c.accent}`;
 
   $('key-lbl').textContent = c.keyLbl;
   apiInput.placeholder = c.keyPlaceholder;
@@ -1154,6 +1168,7 @@ function applyProvider(p) {
 
   const savedKey = localStorage.getItem(`ghost_key_${p}`) || '';
   apiInput.value = savedKey;
+  loadApiKeys(savedKey);
 
   // Reset validation state
   resetValidation();
@@ -1212,6 +1227,20 @@ function getContextLimit(mdl) {
   if (m.includes('gemini')) return 1048576; // 1M
   if (m.includes('grok')) return 131072;
   return 8192;
+}
+
+// Uses the real token count the provider reports for this call (accurate — reflects
+// exactly what's in the model's context window right now). Falls back to the old
+// chars/4 estimate only if a response comes back without usage data.
+function applyTokenUsage(res) {
+  if (res && res.usage && typeof res.usage.totalTokens === 'number') {
+    tokens = res.usage.totalTokens;
+  } else {
+    tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
+  }
+  if (currentSessionId) window.ghostAI.db.updateSessionTokens(currentSessionId, tokens);
+  const left = Math.max(0, getContextLimit(model) - tokens);
+  tokenEl.textContent = `tokens left: ${left.toLocaleString()}`;
 }
 
 function resetValidation() {
@@ -1458,6 +1487,181 @@ window.ghostAI.hotkeys.onError(hotkey => {
 loadHotkeys();
 
 // ═══════════════════════════════════════════════
+//  API KEYS — store multiple per provider, switch which is active
+// ═══════════════════════════════════════════════
+let apiKeyRows = [];
+let apikeyDraftOpen = false;
+
+function maskKey(k) {
+  if (!k) return '';
+  if (k.length <= 8) return '••••••••';
+  return k.slice(0, 4) + '••••' + k.slice(-4);
+}
+
+function showApikeyMessage(text, state = '') {
+  apikeyMsg.className = `hotkey-msg ${state}`.trim();
+  apikeyMsg.textContent = text;
+  if (text) setTimeout(() => {
+    if (apikeyMsg.textContent === text) apikeyMsg.textContent = '';
+  }, 2500);
+}
+
+// If this provider has no saved keys yet but already has a legacy single key
+// (from before this feature existed), seed it in as the first "Default" key
+// so nothing already set up by the user is lost.
+async function loadApiKeys(currentKeyValue) {
+  let res = await window.ghostAI.db.getApiKeys(provider);
+  apiKeyRows = (res && res.success) ? res.data : [];
+  if (!apiKeyRows.length && currentKeyValue) {
+    const addRes = await window.ghostAI.db.addApiKey(provider, 'Default', currentKeyValue, true);
+    if (addRes && addRes.success) {
+      res = await window.ghostAI.db.getApiKeys(provider);
+      apiKeyRows = (res && res.success) ? res.data : [];
+    }
+  }
+  apikeyDraftOpen = false;
+  renderApiKeys();
+}
+
+function renderApiKeys() {
+  apikeyList.innerHTML = '';
+  apiKeyRows.forEach(row => apikeyList.appendChild(createApiKeyRow(row)));
+  if (apikeyDraftOpen) apikeyList.appendChild(createApiKeyDraftRow());
+}
+
+function createApiKeyRow(row) {
+  const el = document.createElement('div');
+  el.className = 'hotkey-item';
+
+  const radio = document.createElement('input');
+  radio.type = 'radio';
+  radio.name = 'apikey-active';
+  radio.className = 'hotkey-enabled';
+  radio.checked = !!row.is_active;
+  radio.title = 'Set as active key';
+
+  const main = document.createElement('div');
+  main.className = 'hotkey-main';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'hotkey-title-row';
+  const label = document.createElement('div');
+  label.className = 'hotkey-label';
+  label.textContent = row.label;
+  const status = document.createElement('div');
+  status.className = 'hotkey-status';
+  status.textContent = row.is_active ? 'active' : '';
+  titleRow.append(label, status);
+
+  const msg = document.createElement('div');
+  msg.className = 'hotkey-msg';
+  msg.textContent = maskKey(row.key_value);
+
+  const actions = document.createElement('div');
+  actions.className = 'hotkey-actions';
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'mini-btn danger';
+  remove.textContent = 'Remove';
+  actions.append(remove);
+
+  main.append(titleRow, msg, actions);
+  el.append(radio, main);
+
+  radio.addEventListener('change', async () => {
+    const res = await window.ghostAI.db.setActiveApiKey(row.id, provider);
+    if (res && res.success) {
+      apiKeyRows = res.data;
+      apiInput.value = row.key_value;
+      saveActiveSettings();
+      markSettingsDirty();
+      renderApiKeys();
+      showApikeyMessage('Switched active key — re-verify to use it.', 'ok');
+    }
+  });
+
+  remove.addEventListener('click', async () => {
+    const res = await window.ghostAI.db.deleteApiKey(row.id);
+    if (res && res.success) {
+      await loadApiKeys();
+      showApikeyMessage('Key removed.', 'ok');
+    }
+  });
+
+  return el;
+}
+
+function createApiKeyDraftRow() {
+  const el = document.createElement('div');
+  el.className = 'hotkey-item';
+  const spacer = document.createElement('div');
+
+  const main = document.createElement('div');
+  main.className = 'hotkey-main';
+
+  const labelInput = document.createElement('input');
+  labelInput.className = 'gi';
+  labelInput.placeholder = 'Label (e.g. Personal, Work)';
+
+  const valueInput = document.createElement('input');
+  valueInput.className = 'gi';
+  valueInput.type = 'password';
+  valueInput.placeholder = 'Paste API key';
+  valueInput.spellcheck = false;
+  valueInput.autocomplete = 'off';
+
+  const actions = document.createElement('div');
+  actions.className = 'hotkey-actions';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'mini-btn primary';
+  save.textContent = 'Save';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'mini-btn danger';
+  cancel.textContent = 'Cancel';
+  actions.append(save, cancel);
+
+  main.append(labelInput, valueInput, actions);
+  el.append(spacer, main);
+
+  save.addEventListener('click', async () => {
+    const label = labelInput.value.trim() || `Key ${apiKeyRows.length + 1}`;
+    const value = valueInput.value.trim();
+    if (!value) {
+      showApikeyMessage('Paste a key first.', 'error');
+      return;
+    }
+    const makeActive = apiKeyRows.length === 0;
+    const res = await window.ghostAI.db.addApiKey(provider, label, value, makeActive);
+    if (res && res.success) {
+      apikeyDraftOpen = false;
+      await loadApiKeys();
+      if (makeActive) {
+        apiInput.value = value;
+        saveActiveSettings();
+        markSettingsDirty();
+      }
+      showApikeyMessage('Key saved.', 'ok');
+    } else {
+      showApikeyMessage(res.error || 'Could not save key.', 'error');
+    }
+  });
+
+  cancel.addEventListener('click', () => {
+    apikeyDraftOpen = false;
+    renderApiKeys();
+  });
+
+  return el;
+}
+
+addApikeyBtn.addEventListener('click', () => {
+  apikeyDraftOpen = true;
+  renderApiKeys();
+});
+
+// ═══════════════════════════════════════════════
 //  VALIDATION STEPS UI
 // ═══════════════════════════════════════════════
 function setStep(id, state, icon, label) {
@@ -1634,8 +1838,13 @@ async function enterChat(sessionId = null) {
         addMsg(msg.content, msg.role === 'user' ? 'user' : 'ai');
         history.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content });
       });
-      tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
     }
+    // Restore the real, persisted token count for this session instead of re-estimating it.
+    try {
+      const sessRes = await window.ghostAI.db.getSessions();
+      const match = sessRes && sessRes.success ? sessRes.data.find(s => s.id === sessionId) : null;
+      tokens = match ? (match.tokens_used || 0) : 0;
+    } catch (e) { tokens = 0; }
     addMsg(`Loaded session via ${provider} · ${model}`, 'system');
   } else {
     currentSessionId = 'sess_' + Date.now();
@@ -1650,8 +1859,10 @@ async function enterChat(sessionId = null) {
     addMsg(`Connected via ${provider} · ${model}`, 'system');
   }
 
+  window.ghostAI.db.setLastSession(currentSessionId);
+
   const limit = getContextLimit(model);
-  tokenEl.textContent = `tokens left: ${(limit - tokens).toLocaleString()}`;
+  tokenEl.textContent = `tokens left: ${Math.max(0, limit - tokens).toLocaleString()}`;
   chatInput.focus();
 }
 
@@ -1974,8 +2185,7 @@ async function runScreenshotQuery(userLabel, apiInstruction, strictNote, busySpa
       addMsg(res.content, 'ai');
       history.push({ role: 'assistant', content: res.content });
       window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
-      tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
-      tokenEl.textContent = `tokens left: ${Math.max(0, getContextLimit(model) - tokens).toLocaleString()}`;
+      applyTokenUsage(res);
     } else if (res.aborted) {
       addMsg('⏹ Stopped.', 'system');
       history.pop();
@@ -2066,11 +2276,7 @@ async function send() {
     addMsg(res.content, 'ai');
     history.push({ role: 'assistant', content: res.content });
     window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
-    
-    tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
-    const limit = getContextLimit(model);
-    const left = Math.max(0, limit - tokens);
-    tokenEl.textContent = `tokens left: ${left.toLocaleString()}`;
+    applyTokenUsage(res);
     // Memory is now fully user-controlled via Memory Mode — no silent auto-overwrite.
   } else if (res.aborted) {
     addMsg('⏹ Generation stopped.', 'system');
@@ -2309,8 +2515,7 @@ async function answerFromVoice(txt) {
     addMsg(res.content, 'ai');
     history.push({ role: 'assistant', content: res.content });
     window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
-    tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
-    tokenEl.textContent = `tokens left: ${Math.max(0, getContextLimit(model) - tokens).toLocaleString()}`;
+    applyTokenUsage(res);
   } else if (!res.aborted) {
     addMsg(`⚠ ${res.error}`, 'error');
     history.pop();
@@ -2339,12 +2544,17 @@ stopBtn.addEventListener('click', () => {
 // ═══════════════════════════════════════════════
 //  AUTO-START: skip setup if settings are saved & verified
 // ═══════════════════════════════════════════════
-(function tryAutoStart() {
+(async function tryAutoStart() {
   bootstrapping = false;
   if (shouldAutoStart()) {
     validated = true;
     didAutoStart = true;
-    enterChat();
+    let lastSessionId = null;
+    try {
+      const res = await window.ghostAI.db.getLastSession();
+      if (res && res.success) lastSessionId = res.data;
+    } catch (e) {}
+    enterChat(lastSessionId || null);
   }
 })();
 </script>

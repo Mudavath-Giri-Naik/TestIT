@@ -43,6 +43,7 @@
     "electron-builder": "^26.15.2"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.111.0",
     "better-sqlite3": "^12.11.1"
   }
 }

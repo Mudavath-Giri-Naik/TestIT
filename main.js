@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, globalShortcut, screen, Menu, Tray, nativeI
 const fs = require('fs');
 const path = require('path');
 const db = require('./src/main/database');
+const supabaseSync = require('./src/main/supabaseSync');
 const { JsonSettingsStore } = require('./src/main/hotkeys/settingsStore');
 const { HOTKEY_ACTIONS, HotkeyManager } = require('./src/main/hotkeys/hotkeyManager');
 
@@ -70,6 +71,45 @@ function showWindow() {
 function sendToRenderer(channel, payload) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send(channel, payload);
+}
+
+// Signs in to Supabase, then pulls anything that exists in the cloud but not
+// on this machine (e.g. sessions created on another device). Local rows are
+// never overwritten — this only ever fills gaps. Fully fail-soft: any error
+// here just means the app stays local-only, nothing else is affected.
+async function syncWithSupabase() {
+  const ok = await supabaseSync.signIn();
+  if (!ok) return;
+  try {
+    const remote = await supabaseSync.pullAll();
+    if (!remote) return;
+
+    const localSessionIds = new Set(db.getSessions().map(s => s.id));
+    const newSessionIds = new Set();
+    for (const s of remote.sessions) {
+      if (!localSessionIds.has(s.id)) {
+        db.importSession(s);
+        newSessionIds.add(s.id);
+      }
+    }
+    for (const m of remote.messages) {
+      if (newSessionIds.has(m.session_id)) {
+        db.importMessage(m.session_id, m.role, m.content, m.created_at);
+      }
+    }
+    if (remote.memory && remote.memory.core_memory && !db.getCoreMemory()) {
+      db.updateCoreMemory(remote.memory.core_memory);
+    }
+    const localKeyIds = new Set(db.getAllApiKeys().map(k => k.id));
+    for (const k of remote.apiKeys) {
+      if (!localKeyIds.has(k.id)) db.importApiKey(k);
+    }
+    if (remote.lastSessionId && !db.getLastSessionId()) {
+      db.setLastSessionId(remote.lastSessionId);
+    }
+  } catch (e) {
+    console.warn('[supabase] merge skipped:', e.message);
+  }
 }
 
 function createHotkeyManager() {
@@ -252,6 +292,10 @@ app.whenReady().then(() => {
   db.init();
   createHotkeyManager();
 
+  // Cloud sign-in + cross-device merge happen in the background — the app is
+  // fully usable locally the instant it opens, regardless of network state.
+  syncWithSupabase();
+
   // Allow the renderer to capture system/computer audio (loopback) for the live agent.
   // On Windows, audio: 'loopback' captures what's playing on the machine (e.g. a call).
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
@@ -305,26 +349,92 @@ ipcMain.handle('capture-screenshot', async () => {
 });
 
 // ── DATABASE / HISTORY ──
+// Every handler below writes to local SQLite first (unchanged, instant, always works),
+// then fires an async mirror to Supabase that can never fail the local operation.
 ipcMain.handle('db:get-sessions', () => {
   try { return { success: true, data: db.getSessions() }; } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('db:create-session', (event, id, title, provider, model) => {
-  try { return { success: true, data: db.createSession(id, title, provider, model) }; } catch (e) { return { success: false, error: e.message }; }
+  try {
+    const data = db.createSession(id, title, provider, model);
+    supabaseSync.pushSession(data);
+    return { success: true, data };
+  } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('db:get-messages', (event, sessionId) => {
   try { return { success: true, data: db.getMessages(sessionId) }; } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('db:add-message', (event, sessionId, role, content) => {
-  try { db.addMessage(sessionId, role, content); return { success: true }; } catch (e) { return { success: false, error: e.message }; }
+  try {
+    const createdAt = db.addMessage(sessionId, role, content);
+    supabaseSync.pushMessage(sessionId, role, content, createdAt);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('db:delete-session', (event, id) => {
-  try { db.deleteSession(id); return { success: true }; } catch (e) { return { success: false, error: e.message }; }
+  try {
+    db.deleteSession(id);
+    supabaseSync.pushDeleteSession(id);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('db:get-memory', () => {
   try { return { success: true, data: db.getCoreMemory() }; } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.handle('db:update-memory', (event, text) => {
-  try { db.updateCoreMemory(text); return { success: true }; } catch (e) { return { success: false, error: e.message }; }
+  try {
+    db.updateCoreMemory(text);
+    supabaseSync.pushMemory(text);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:update-session-tokens', (event, sessionId, tokens) => {
+  try {
+    db.updateSessionTokens(sessionId, tokens);
+    supabaseSync.pushSessionTokens(sessionId, tokens);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:get-last-session', () => {
+  try { return { success: true, data: db.getLastSessionId() }; } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:set-last-session', (event, sessionId) => {
+  try {
+    db.setLastSessionId(sessionId);
+    supabaseSync.pushLastSession(sessionId);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+
+// ── API KEYS (multiple per provider, manual rotation) ──
+ipcMain.handle('db:get-api-keys', (event, provider) => {
+  try { return { success: true, data: db.getApiKeys(provider) }; } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:add-api-key', (event, provider, label, keyValue, makeActive) => {
+  try {
+    const id = `key_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+    const row = db.addApiKey(id, provider, label, keyValue, makeActive);
+    supabaseSync.pushApiKey(row);
+    if (makeActive) {
+      // Other keys for this provider just got deactivated locally — mirror that too.
+      db.getApiKeys(provider).forEach(k => supabaseSync.pushApiKey(k));
+    }
+    return { success: true, data: row };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:set-active-api-key', (event, id, provider) => {
+  try {
+    db.setActiveApiKey(id, provider);
+    db.getApiKeys(provider).forEach(k => supabaseSync.pushApiKey(k));
+    return { success: true, data: db.getApiKeys(provider) };
+  } catch (e) { return { success: false, error: e.message }; }
+});
+ipcMain.handle('db:delete-api-key', (event, id) => {
+  try {
+    db.deleteApiKey(id);
+    supabaseSync.pushDeleteApiKey(id);
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
 });
 
 // ── VALIDATE API KEY (test call) ──
@@ -473,7 +583,8 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
       throw new Error(`HTTP ${res.status}: ${msg}`);
     }
     const data = await res.json();
-    return { success: true, content: data.content[0].text };
+    const usage = data.usage ? { totalTokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0) } : null;
+    return { success: true, content: data.content[0].text, usage };
   }
 
   // ── GROQ ──
@@ -496,7 +607,8 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
       throw new Error(`HTTP ${res.status}: ${msg}`);
     }
     const data = await res.json();
-    return { success: true, content: data.choices[0].message.content };
+    const usage = data.usage ? { totalTokens: data.usage.total_tokens } : null;
+    return { success: true, content: data.choices[0].message.content, usage };
   }
 
   // ── GEMINI ──
@@ -528,7 +640,8 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error('Empty response — model may have blocked the message.');
-    return { success: true, content: text };
+    const usage = data.usageMetadata ? { totalTokens: data.usageMetadata.totalTokenCount } : null;
+    return { success: true, content: text, usage };
   }
 
   // ── GROK (xAI) ──
@@ -549,7 +662,8 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
       throw new Error(`HTTP ${res.status}: ${msg}`);
     }
     const data = await res.json();
-    return { success: true, content: data.choices[0].message.content };
+    const usage = data.usage ? { totalTokens: data.usage.total_tokens } : null;
+    return { success: true, content: data.choices[0].message.content, usage };
   }
 
   throw new Error(`Unknown provider: ${provider}`);
