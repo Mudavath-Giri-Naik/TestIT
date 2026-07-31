@@ -1,6 +1,6 @@
 {
   "name": "ghost-ai",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "productName": "Ghost AI",
   "description": "Transparent always-on-top AI chat assistant.",
   "main": "main.js",
@@ -40,7 +40,7 @@
   "license": "ISC",
   "devDependencies": {
     "electron": "^42.3.3",
-    "electron-builder": "^26.15.2"
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",

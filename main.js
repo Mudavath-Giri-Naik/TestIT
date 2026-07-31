@@ -45,7 +45,7 @@ function setClickThrough(enabled) {
 
 function showAndFocusWindow() {
   if (!mainWindow) return;
-  if (!mainWindow.isVisible()) mainWindow.showInactive();
+  mainWindow.showInactive();
   mainWindow.focus();
 }
 
@@ -204,8 +204,30 @@ function createTray() {
   updateTrayMenu();
 }
 
+
+function showAndFocusWindow() {
+  if (!mainWindow) return;
+  mainWindow.showInactive(); // Replaces mainWindow.focus()
+}
+
+
 function handleHotkeyAction(hotkey) {
   switch (hotkey.action) {
+    case 'toggle-window':
+      toggleWindowVisibility();
+      break;
+    case 'hide-window':
+      hideWindow();
+      break;
+    case 'show-window':
+    case 'screenshot-ask':
+    case 'focus-chat':
+    case 'open-settings':
+    case 'new-chat':
+      if (mainWindow && !mainWindow.isVisible()) {
+        mainWindow.showInactive(); // Reveals window without taking keyboard focus from browser
+      }
+      break;
     case 'toggle-window':
       toggleWindowVisibility();
       break;
@@ -223,6 +245,7 @@ function handleHotkeyAction(hotkey) {
       setClickThrough(!clickThrough);
       break;
     case 'quit-app':
+      isQuitting = true;
       app.quit();
       break;
     case 'focus-chat':
@@ -234,7 +257,6 @@ function handleHotkeyAction(hotkey) {
       console.warn(`[hotkeys] No handler registered for action "${hotkey.action}".`);
   }
 }
-
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
@@ -251,11 +273,12 @@ function createWindow() {
     type: 'panel',
     skipTaskbar: true,
     
-    // --- ADD THESE THREE LINES TO PREVENT FOCUS STEALING ---
-    focusable: false,       // Stops the window from stealing focus when clicked
-    acceptFirstMouse: true, // Allows buttons inside to be clicked instantly
-    hasShadow: false,       // Optional: helps non-focusable panels render cleanly
-    
+    // Configured to prevent focus-stealing while remaining interactive
+    focusable: false,
+    acceptFirstMouse: true,
+    hasShadow: false,
+    noActivate: true,
+
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -267,18 +290,25 @@ function createWindow() {
     minHeight: 420,
   });
 
-
+  // Window methods called safely AFTER mainWindow is instantiated
   mainWindow.setContentProtection(true);
   mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  mainWindow.showInactive();
   mainWindow.loadFile('src/index.html');
+
   mainWindow.on('show', updateTrayMenu);
-  mainWindow.on('hide', updateTrayMenu);
+  mainWindow.on('hide', () => {
+    updateTrayMenu();
+  });
+
   mainWindow.on('close', (event) => {
     if (isQuitting) return;
     event.preventDefault();
     mainWindow.hide();
   });
+
   if (process.platform === 'darwin') app.dock.hide();
 }
 
@@ -329,7 +359,21 @@ app.on('will-quit', () => {
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
-ipcMain.on('window-close', () => mainWindow.hide());
+// Dynamic Ignore Mouse Events Handler for Preload/Renderer mouse tracking
+ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setIgnoreMouseEvents(ignore, options);
+  }
+});
+
+// The titlebar's close (✕) button fully quits the app — it previously just
+// hid the window to the tray, so the background process (and its session
+// state) kept running until the tray "Quit" item was used instead.
+ipcMain.on('window-close', () => {
+  isQuitting = true;
+  app.quit();
+});
 ipcMain.on('window-minimize', () => mainWindow.hide());
 ipcMain.handle('set-click-through', (event, enabled) => {
   setClickThrough(Boolean(enabled));

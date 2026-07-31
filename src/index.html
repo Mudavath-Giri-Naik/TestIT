@@ -4,6 +4,28 @@
   <meta charset="UTF-8" />
   <title>Ghost AI</title>
   <script>
+    document.addEventListener('mousedown', (e) => {
+    const isTextInput = e.target.matches('input, textarea, [contenteditable="true"]');
+    
+    // If clicking a button, panel, or empty space, prevent OS window activation/focus transfer
+    if (!isTextInput) {
+      e.preventDefault();
+    }
+  });
+
+      // Dynamic Mouse Tracking: Enables clicks only when hovering over interactive elements
+    document.addEventListener('mousemove', (e) => {
+    // Checks if the hovered element (or any of its parents) is interactive
+    const isInteractive = e.target.closest('input, textarea, button, select, a, [role="button"], .interactive');
+
+    if (isInteractive) {
+      // Enable clicks for UI elements
+      window.electronAPI.setIgnoreMouseEvents(false);
+    } else {
+      // Let clicks pass through transparent space to the browser underneath
+      window.electronAPI.setIgnoreMouseEvents(true, { forward: true });
+    }
+  });
     // Applied before first paint so switching themes doesn't flash the wrong one on launch.
     (function () {
       try {
@@ -534,6 +556,16 @@
       border-radius: 8px; border: 1px solid var(--glass-border);
     }
 
+    /* Shows which preset(s) (Coding/Python/Java/C++/MCQ) a message was sent
+       with — truncates with an ellipsis instead of wrapping when long. */
+    .msg-presets {
+      display: block; max-width: 100%;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: 'DM Mono', monospace; font-size: 9.5px;
+      color: var(--text-dim); letter-spacing: 0.03em;
+      margin-bottom: 4px;
+    }
+
     #attachment-strip {
       display: none;
       flex-wrap: wrap; gap: 6px;
@@ -555,6 +587,29 @@
       background: rgba(0,0,0,0.65); color: #fff; border: none;
       font-size: 9px; line-height: 15px; text-align: center;
       cursor: pointer; padding: 0;
+    }
+
+    /* ── PRESET MODE STRIP (Coding / language / MCQ system prompts) ── */
+    #preset-strip {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      padding: 0 13px 7px;
+    }
+    .preset-btn {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--glass-light);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px; padding: 5px 10px 5px 8px;
+      color: var(--text-dim); font-family: 'Syne', sans-serif;
+      font-size: 10.5px; font-weight: 600; cursor: pointer;
+      transition: all 0.15s; line-height: 1;
+    }
+    .preset-btn .preset-icon { display: flex; line-height: 1; }
+    .preset-btn .preset-icon svg { width: 13px; height: 13px; }
+    .preset-btn:hover { color: var(--text); border-color: var(--overlay-18); background: var(--overlay-06); }
+    .preset-btn.active {
+      color: var(--text);
+      border-color: var(--overlay-18);
+      background: var(--overlay-08);
     }
 
     .kw {
@@ -599,6 +654,7 @@
     .tok { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-dim); white-space: nowrap; }
     #opacity-slider {
       width: 70px; height: 3px; -webkit-appearance: none;
+      appearance: none;
       background: var(--overlay-1); border-radius: 2px; cursor: pointer;
       margin-right: 8px;
       align-self: center;
@@ -637,6 +693,16 @@
     #send-btn:hover { color: var(--text); background: var(--overlay-08); }
     #send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
     #send-btn svg { width: 15px; height: 15px; }
+
+    #search-btn {
+      width: 36px; height: 36px; flex-shrink: 0;
+      background: var(--glass-light); border: 1px solid var(--glass-border);
+      border-radius: 9px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s; color: var(--text-dim);
+    }
+    #search-btn:hover { color: var(--text); background: var(--overlay-08); }
+    #search-btn svg { width: 15px; height: 15px; }
 
     #stop-btn {
       width: 36px; height: 36px; flex-shrink: 0;
@@ -946,7 +1012,7 @@
     <button id="start-btn">Start Chatting →</button>
 
     <div class="key-hint">
-      Toggle: <kbd>Ctrl+Shift+Space</kbd> &nbsp;·&nbsp; Screenshot &amp; Ask: <kbd>Ctrl+Shift+S</kbd> &nbsp;·&nbsp; Hide: <kbd>Ctrl+Shift+Z</kbd> &nbsp;·&nbsp; Show: <kbd>Ctrl+Shift+O</kbd><br>
+      Toggle: <kbd>Ctrl+Shift+T</kbd> &nbsp;·&nbsp; Focus Chat: <kbd>Ctrl+Shift+Space</kbd> &nbsp;·&nbsp; Screenshot &amp; Ask: <kbd>Ctrl+Shift+S</kbd> &nbsp;·&nbsp; Hide: <kbd>Ctrl+Shift+Z</kbd> &nbsp;·&nbsp; Show: <kbd>Ctrl+Shift+O</kbd><br>
       Click-through: <kbd>Ctrl+Shift+X</kbd> &nbsp;·&nbsp; Quit: <kbd>Ctrl+Shift+Q</kbd>
     </div>
   </div>
@@ -963,6 +1029,7 @@
       <span id="listen-status"></span>
     </div>
     <div id="attachment-strip"></div>
+    <div id="preset-strip"></div>
     <div id="input-area">
       <button id="listen-btn" title="Live Agent — listen to computer audio and auto-answer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
@@ -987,6 +1054,12 @@
       <button id="stop-btn" title="Stop generating">
         <svg viewBox="0 0 24 24" fill="currentColor">
           <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+        </svg>
+      </button>
+      <button id="search-btn" title="Click to type">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
       </button>
     </div>
@@ -1082,6 +1155,11 @@ let didAutoStart = false;
 let currentSessionId = null;
 let unifiedMemory = '';
 let memMode = false;
+let activePresets = new Set();
+try {
+  const savedPresets = JSON.parse(localStorage.getItem('ghost_presets') || '[]');
+  if (Array.isArray(savedPresets)) savedPresets.forEach(k => activePresets.add(k));
+} catch (e) {}
 
 // ═══════════════════════════════════════════════
 //  ELEMENTS
@@ -1104,6 +1182,7 @@ const messagesEl     = $('messages');
 const chatInput      = $('chat-input');
 const sendBtn        = $('send-btn');
 const stopBtn        = $('stop-btn');
+const searchBtn      = $('search-btn');
 const newChatBtn     = $('new-chat-btn');
 const historyBtn     = $('history-btn');
 const historyPanel   = $('history-panel');
@@ -1123,6 +1202,7 @@ const listenBtn      = $('listen-btn');
 const listenStatus   = $('listen-status');
 const tokenEl        = $('token-count');
 const attachmentStrip = $('attachment-strip');
+const presetStrip     = $('preset-strip');
 const pillText       = $('pill-text');
 const badge          = $('provider-badge');
 const clickThroughBtn = $('click-through-btn');
@@ -2161,10 +2241,18 @@ chatInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
 sendBtn.addEventListener('click', send);
+searchBtn.addEventListener('click', () => chatInput.focus());
 
-function addMsg(text, role, images) {
+function addMsg(text, role, images, presetPreview) {
   const el = document.createElement('div');
   el.className = `msg ${role}`;
+  if (presetPreview) {
+    const tag = document.createElement('div');
+    tag.className = 'msg-presets';
+    tag.textContent = presetPreview;
+    tag.title = presetPreview;
+    el.appendChild(tag);
+  }
   if (images && images.length) {
     const thumbs = document.createElement('div');
     thumbs.className = 'msg-thumbs';
@@ -2305,11 +2393,100 @@ function trimmedHistory() {
   return history.slice(start);
 }
 
+// ═══════════════════════════════════════════════
+//  PRESET MODES (Coding / language / MCQ system prompts)
+//  Click a preset before sending a screenshot — its system prompt is used
+//  for that request instead of the default clone persona.
+// ═══════════════════════════════════════════════
+function buildCodingSystemPrompt(language) {
+  return `You are a coding assistant that solves coding questions from screenshots.
+
+Rules:
+1. Read the screenshot carefully — identify the problem statement AND any starter/template code already given (function signatures, class names, imports, comments).
+2. Your output must CONTINUE the exact given template — do not rewrite, rename, or restructure it. Keep function/class/variable names, parameter order, and code style exactly as shown.
+3. Write the solution in ${language} only.
+4. Output ONLY the complete, final code — no explanations, no alternate approaches, no "here's how it works" text, unless I explicitly ask for an explanation.
+5. If the screenshot has partial code with a placeholder (e.g., "// your code here" or "pass"), fill only that part but return the FULL code (template + your solution) so it's ready to run/paste.
+6. Do not change the problem's expected input/output format or function return type.
+7. If the image is unclear or ambiguous, make the most reasonable assumption based on standard coding problem conventions and proceed — don't ask clarifying questions unless the template is genuinely missing.`;
+}
+
+const MCQ_SYSTEM_PROMPT = `You are an MCQ-solving assistant that answers multiple-choice questions from screenshots.
+
+Rules:
+1. Read the screenshot carefully — identify the question and ALL options exactly as given (A/B/C/D or 1/2/3/4, whatever format is shown).
+2. Output format:
+   - Answer: [correct option letter/number + option text]
+   - Reason: 1-3 short lines explaining why (only if I ask for reasoning; otherwise skip)
+3. If multiple questions are in one screenshot, answer ALL of them, numbered in the same order as shown.
+4. Do not skip a question or say "it depends" — always commit to the single best answer based on standard/most accepted knowledge.
+5. If the question is ambiguous or the image is unclear, still give your best answer and briefly note the uncertainty in one line — don't just ask for clarification.
+6. No extra commentary, no repeating the full question back, no unrelated explanation unless asked.
+7. If it's a numerical/calculation-based MCQ, show the calculation briefly only if asked; otherwise just the final answer.
+
+Wait for my screenshot before responding.`;
+
+// Same minimal line-icon set the rest of the titlebar uses (stroke=currentColor) —
+// no emoji, no per-preset brand colors. The label text tells presets apart.
+const CODE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`;
+const MCQ_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`;
+
+const PRESETS = {
+  coding: {
+    icon: CODE_ICON_SVG, label: 'Coding', title: 'Coding — auto-detect language from the screenshot',
+    prompt: buildCodingSystemPrompt("the language shown in the screenshot's starter code (infer from syntax, imports, or file extension); if nothing indicates a language, default to Python"),
+  },
+  python: { icon: CODE_ICON_SVG, label: 'Python', title: 'Coding — Python', prompt: 'Language = Python' },
+  java:   { icon: CODE_ICON_SVG, label: 'Java',   title: 'Coding — Java',   prompt: 'Language = Java' },
+  cpp:    { icon: CODE_ICON_SVG, label: 'C++',    title: 'Coding — C++',    prompt: 'Language = C++' },
+  mcq:    { icon: MCQ_ICON_SVG,  label: 'MCQ',    title: 'Multiple-choice questions', prompt: MCQ_SYSTEM_PROMPT },
+};
+
+function renderPresetStrip() {
+  presetStrip.innerHTML = '';
+  Object.entries(PRESETS).forEach(([key, preset]) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'preset-btn';
+    btn.classList.toggle('active', activePresets.has(key));
+    btn.title = preset.title + ' — click to toggle (multiple can be selected)';
+    btn.innerHTML = `<span class="preset-icon">${preset.icon}</span><span>${preset.label}</span>`;
+    btn.addEventListener('click', () => togglePreset(key));
+    presetStrip.appendChild(btn);
+  });
+}
+
+// Presets are multi-select — e.g. Python + MCQ can both be on at once. Their
+// prompt text is dropped straight into the chat input (visible, editable) so
+// what you see in the box is exactly what Send will send — no hidden system
+// prompt swap to get out of sync with the actual request.
+function togglePreset(key) {
+  if (activePresets.has(key)) activePresets.delete(key);
+  else activePresets.add(key);
+  localStorage.setItem('ghost_presets', JSON.stringify([...activePresets]));
+  renderPresetStrip();
+
+  const presetDefs = [...activePresets].map(k => PRESETS[k]).filter(Boolean);
+  chatInput.value = presetDefs.map(p => p.prompt).join('\n\n---\n\n');
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 110) + 'px';
+  chatInput.focus();
+}
+
+renderPresetStrip();
+
 async function send() {
+  if (isTyping) return;
   const txt = chatInput.value.trim();
-  const images = pendingImages.slice();
-  if ((!txt && !images.length) || isTyping) return;
-  if (memMode) { handleMemoryEdit(txt); return; }
+  let images = pendingImages.slice();
+  if (memMode) {
+    if (!txt) return;
+    handleMemoryEdit(txt);
+    return;
+  }
+  // Screenshots are only ever captured via the Ctrl+Shift+S hotkey (staged
+  // into pendingImages) — Send never takes one on its own, preset selected or not.
+  if (!txt && !images.length) return;
   isTyping = true;
   sendBtn.style.display = 'none';
   stopBtn.classList.add('visible');
@@ -2317,37 +2494,48 @@ async function send() {
   pendingImages = [];
   renderAttachmentStrip();
 
-  const label = txt || `📸 ${images.length} screenshot${images.length > 1 ? 's' : ''}`;
-  addMsg(label, 'user', images);
-  history.push({ role: 'user', content: txt || `[${images.length} screenshot(s) attached] Look at the screen and help with what's relevant.` });
+  // Everything below is wrapped so a failure anywhere (DB write, request build,
+  // network call) can never leave isTyping stuck true — which would otherwise
+  // silently block every future click of Send, preset selected or not, image
+  // attached or not, until the app is restarted.
+  try {
+    // txt already contains whatever preset prompt(s) were clicked into the box
+    // (plus anything else typed/edited) — it's sent as-is, exactly what's visible.
+    const label = txt || `📸 ${images.length} screenshot${images.length > 1 ? 's' : ''}`;
+    addMsg(label, 'user', images);
+    history.push({ role: 'user', content: txt || `[${images.length} screenshot(s) attached] Look at the screen and help with what's relevant.` });
 
-  // Save to DB
-  window.ghostAI.db.addMessage(currentSessionId, 'user', label);
+    // Save to DB
+    window.ghostAI.db.addMessage(currentSessionId, 'user', label);
 
-  showThinking();
+    showThinking();
 
-  // Build the clone persona + inject memory behind the scenes
-  let activeSystemPrompt = buildPersonaPrompt();
+    const activeSystemPrompt = buildPersonaPrompt();
 
-  const res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: activeSystemPrompt, images });
-  hideThinking();
-  stopBtn.classList.remove('visible');
-  sendBtn.style.display = 'flex';
-  sendBtn.disabled = false;
-  if (res.success) {
-    addMsg(res.content, 'ai');
-    history.push({ role: 'assistant', content: res.content });
-    window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
-    applyTokenUsage(res);
-    // Memory is now fully user-controlled via Memory Mode — no silent auto-overwrite.
-  } else if (res.aborted) {
-    addMsg('⏹ Generation stopped.', 'system');
-    history.pop();
-  } else {
-    addMsg(`⚠ ${res.error}`, 'error');
-    history.pop();
+    const res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: activeSystemPrompt, images });
+    if (res.success) {
+      addMsg(res.content, 'ai');
+      history.push({ role: 'assistant', content: res.content });
+      window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
+      applyTokenUsage(res);
+      // Memory is now fully user-controlled via Memory Mode — no silent auto-overwrite.
+    } else if (res.aborted) {
+      addMsg('⏹ Generation stopped.', 'system');
+      history.pop();
+    } else {
+      addMsg(`⚠ ${res.error}`, 'error');
+      history.pop();
+    }
+  } catch (e) {
+    addMsg(`⚠ ${e.message || 'Something went wrong sending that.'}`, 'error');
+  } finally {
+    hideThinking();
+    stopBtn.classList.remove('visible');
+    sendBtn.style.display = 'flex';
+    sendBtn.disabled = false;
+    isTyping = false;
+    chatInput.focus();
   }
-  isTyping = false; chatInput.focus();
 }
 
 // ═══════════════════════════════════════════════

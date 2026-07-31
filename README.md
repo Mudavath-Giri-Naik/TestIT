@@ -24,7 +24,8 @@ Built with Electron + Anthropic Claude API.
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+Shift+Space` | Toggle show/hide |
+| `Ctrl+Shift+T` | Toggle show/hide |
+| `Ctrl+Shift+Space` | Focus chat input |
 | `Ctrl+Shift+X` | Toggle click-through |
 | `Ctrl+Shift+Q` | Quit app |
 | `Enter` | Send message |
