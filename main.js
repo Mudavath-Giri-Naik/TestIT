@@ -55,6 +55,18 @@ function toggleWindowVisibility() {
   updateTrayMenu();
 }
 
+function hideWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isVisible()) mainWindow.hide();
+}
+
+// Reveals the window without stealing focus from whatever app you're in —
+// same non-intrusive behavior as the "show" half of toggleWindowVisibility.
+function showWindow() {
+  if (!mainWindow) return;
+  if (!mainWindow.isVisible()) mainWindow.showInactive();
+}
+
 function sendToRenderer(channel, payload) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send(channel, payload);
@@ -157,6 +169,16 @@ function handleHotkeyAction(hotkey) {
     case 'toggle-window':
       toggleWindowVisibility();
       break;
+    case 'hide-window':
+      hideWindow();
+      break;
+    case 'show-window':
+      showWindow();
+      break;
+    case 'screenshot-ask':
+      // Reveal (without stealing focus) so the answer is visible; the renderer does the actual capture+ask.
+      showWindow();
+      break;
     case 'toggle-click-through':
       setClickThrough(!clickThrough);
       break;
@@ -255,6 +277,33 @@ ipcMain.handle('set-click-through', (event, enabled) => {
   return clickThrough;
 });
 
+// ── SCREENSHOT (for click-a-keyword → ask AI) ──
+// mainWindow has setContentProtection(true), so it never appears in this capture.
+ipcMain.handle('capture-screenshot', async () => {
+  try {
+    const primary = screen.getPrimaryDisplay();
+    const { width, height } = primary.size;
+    const scaleFactor = primary.scaleFactor || 1;
+    const maxEdge = 1568; // keeps vision API payloads small and within provider limits
+    const nativeW = Math.round(width * scaleFactor);
+    const nativeH = Math.round(height * scaleFactor);
+    const shrink = Math.min(1, maxEdge / Math.max(nativeW, nativeH));
+
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: Math.round(nativeW * shrink), height: Math.round(nativeH * shrink) },
+    });
+    if (!sources.length) return { success: false, error: 'No screen source available to capture.' };
+
+    const source = sources.find(s => s.display_id === String(primary.id)) || sources[0];
+    const dataUrl = source.thumbnail.toDataURL();
+    if (!dataUrl || dataUrl === 'data:,') return { success: false, error: 'Screenshot capture returned an empty image.' };
+    return { success: true, dataUrl };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
 // ── DATABASE / HISTORY ──
 ipcMain.handle('db:get-sessions', () => {
   try { return { success: true, data: db.getSessions() }; } catch (e) { return { success: false, error: e.message }; }
@@ -319,12 +368,12 @@ ipcMain.handle('validate-key', async (event, { provider, apiKey, model }) => {
 // ── CHAT ──
 let currentChatAbort = null;
 
-ipcMain.handle('ai-chat', async (event, { provider, apiKey, messages, model, systemPrompt }) => {
+ipcMain.handle('ai-chat', async (event, { provider, apiKey, messages, model, systemPrompt, image }) => {
   if (currentChatAbort) currentChatAbort.abort();
   const abort = new AbortController();
   currentChatAbort = abort;
   try {
-    const result = await callAI(provider, apiKey, model, messages, systemPrompt, false, abort.signal);
+    const result = await callAI(provider, apiKey, model, messages, systemPrompt, false, abort.signal, image);
     return result;
   } catch (e) {
     if (e.name === 'AbortError') return { success: false, error: 'stopped', aborted: true };
@@ -371,11 +420,43 @@ ipcMain.handle('transcribe-audio', async (event, { apiKey, buffer, mimeType }) =
   }
 });
 
-async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, signal) {
+// Splits a `data:<mime>;base64,<data>` URL into its parts, or null if malformed.
+function parseDataUrl(dataUrl) {
+  const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || '');
+  if (!match) return null;
+  return { mimeType: match[1], base64: match[2] };
+}
+
+async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, signal, image) {
+  const imageData = image ? parseDataUrl(image) : null;
+
+  // Attaches the screenshot to the last (user) message in OpenAI-compatible content-array form.
+  function withImageOpenAIStyle(msgs) {
+    if (!imageData || !msgs.length) return msgs;
+    const cloned = msgs.map(m => ({ ...m }));
+    const last = cloned[cloned.length - 1];
+    if (last.role !== 'user') return cloned;
+    last.content = [
+      { type: 'image_url', image_url: { url: image } },
+      { type: 'text', text: last.content },
+    ];
+    return cloned;
+  }
 
   // ── ANTHROPIC ──
   if (provider === 'anthropic') {
-    const body = { model, max_tokens: isTest ? 10 : 2048, messages };
+    let msgs = messages;
+    if (imageData && msgs.length) {
+      msgs = msgs.map(m => ({ ...m }));
+      const last = msgs[msgs.length - 1];
+      if (last.role === 'user') {
+        last.content = [
+          { type: 'image', source: { type: 'base64', media_type: imageData.mimeType, data: imageData.base64 } },
+          { type: 'text', text: last.content },
+        ];
+      }
+    }
+    const body = { model, max_tokens: isTest ? 10 : 2048, messages: msgs };
     if (systemPrompt) body.system = systemPrompt;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -397,7 +478,8 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
 
   // ── GROQ ──
   if (provider === 'groq') {
-    const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages;
+    const withImage = withImageOpenAIStyle(messages);
+    const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...withImage] : withImage;
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -419,10 +501,16 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
 
   // ── GEMINI ──
   if (provider === 'gemini') {
-    const contents = messages.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
+    const contents = messages.map((m, i) => {
+      const parts = [{ text: m.content }];
+      if (imageData && i === messages.length - 1 && m.role === 'user') {
+        parts.unshift({ inlineData: { mimeType: imageData.mimeType, data: imageData.base64 } });
+      }
+      return {
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts,
+      };
+    });
     const body = { contents };
     if (systemPrompt) body.systemInstruction = { parts: [{ text: systemPrompt }] };
     const res = await fetch(
@@ -445,7 +533,8 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
 
   // ── GROK (xAI) ──
   if (provider === 'grok') {
-    const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages;
+    const withImage = withImageOpenAIStyle(messages);
+    const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...withImage] : withImage;
     const res = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },

@@ -3,6 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <title>Ghost AI</title>
+  <script>
+    // Applied before first paint so switching themes doesn't flash the wrong one on launch.
+    (function () {
+      try {
+        document.documentElement.setAttribute('data-theme', localStorage.getItem('ghost_theme') || 'dark');
+      } catch (e) {}
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -19,12 +27,67 @@
       --glass-border: rgba(255,255,255,0.08);
       --text: rgba(255,255,255,0.9);
       --text-dim: rgba(255,255,255,0.38);
+      --text-strong: rgba(255,255,255,0.85);
+      --text-soft: rgba(255,255,255,0.78);
       --danger: #FF6B6B;
       --success: #5EF08A;
       --warning: #FFD166;
       --accent: #7DF9AA;
       --accent2: #4FC3F7;
       --radius: 16px;
+
+      /* Neutral overlay tiers reused across buttons/panels — swapped white↔black per theme. */
+      --overlay-025: rgba(255,255,255,0.025);
+      --overlay-03: rgba(255,255,255,0.03);
+      --overlay-05: rgba(255,255,255,0.05);
+      --overlay-06: rgba(255,255,255,0.06);
+      --overlay-07: rgba(255,255,255,0.07);
+      --overlay-08: rgba(255,255,255,0.08);
+      --overlay-1: rgba(255,255,255,0.1);
+      --overlay-18: rgba(255,255,255,0.18);
+      --overlay-30: rgba(255,255,255,0.3);
+
+      --recessed-06: rgba(0,0,0,0.16);
+      --recessed-08: rgba(0,0,0,0.2);
+      --code-bg: rgba(0,0,0,0.3);
+      --shadow-color: rgba(0,0,0,0.7);
+      --shadow-highlight: rgba(255,255,255,0.05);
+      --shadow-inset: rgba(255,255,255,0.07);
+
+      --dropdown-bg: #0f0f14;
+      --dropdown-text: rgba(255,255,255,0.95);
+      --error-text: rgba(255,150,150,0.9);
+    }
+
+    :root[data-theme="light"] {
+      --glass: rgba(255, 255, 255, 0.84);
+      --glass-light: rgba(0,0,0,0.035);
+      --glass-border: rgba(0,0,0,0.1);
+      --text: rgba(16,16,22,0.92);
+      --text-dim: rgba(16,16,22,0.45);
+      --text-strong: rgba(16,16,22,0.88);
+      --text-soft: rgba(16,16,22,0.78);
+
+      --overlay-025: rgba(0,0,0,0.025);
+      --overlay-03: rgba(0,0,0,0.035);
+      --overlay-05: rgba(0,0,0,0.05);
+      --overlay-06: rgba(0,0,0,0.06);
+      --overlay-07: rgba(0,0,0,0.07);
+      --overlay-08: rgba(0,0,0,0.08);
+      --overlay-1: rgba(0,0,0,0.1);
+      --overlay-18: rgba(0,0,0,0.18);
+      --overlay-30: rgba(0,0,0,0.3);
+
+      --recessed-06: rgba(0,0,0,0.05);
+      --recessed-08: rgba(0,0,0,0.06);
+      --code-bg: rgba(0,0,0,0.05);
+      --shadow-color: rgba(20,20,30,0.18);
+      --shadow-highlight: rgba(255,255,255,0.7);
+      --shadow-inset: rgba(255,255,255,0.8);
+
+      --dropdown-bg: #ffffff;
+      --dropdown-text: rgba(16,16,22,0.92);
+      --error-text: rgba(180,40,40,0.95);
     }
 
     html, body {
@@ -43,29 +106,17 @@
       border-radius: var(--radius);
       display: flex; flex-direction: column;
       overflow: hidden;
-      box-shadow: 0 0 0 0.5px rgba(255,255,255,0.05), 0 40px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.07);
+      box-shadow: 0 0 0 0.5px var(--shadow-highlight), 0 40px 80px var(--shadow-color), inset 0 1px 0 var(--shadow-inset);
     }
 
     /* ── TITLEBAR ── */
     #titlebar {
       -webkit-app-region: drag;
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex; align-items: center; justify-content: flex-end;
       padding: 11px 14px 10px;
       border-bottom: 1px solid var(--glass-border);
       flex-shrink: 0; user-select: none;
     }
-    .title-left { display: flex; align-items: center; gap: 9px; }
-    .ghost-dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--accent); box-shadow: 0 0 8px var(--accent);
-      animation: blink 2.4s ease-in-out infinite;
-    }
-    @keyframes blink {
-      0%,100% { opacity:1; transform:scale(1); }
-      50% { opacity:0.4; transform:scale(0.7); }
-    }
-    .app-title { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: 0.04em; }
-    .app-sub { font-size: 9px; color: var(--text-dim); letter-spacing: 0.12em; text-transform: uppercase; }
 
     .title-controls { display: flex; gap: 5px; -webkit-app-region: no-drag; align-items: center; }
     .ctrl-btn {
@@ -74,14 +125,18 @@
       color: var(--text-dim); font-size: 11px; cursor: pointer;
       display: flex; align-items: center; justify-content: center; transition: all 0.15s;
     }
-    .ctrl-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+    .ctrl-btn:hover { color: var(--text); background: var(--overlay-08); }
     .ctrl-btn.active {
-      color: var(--accent);
-      border-color: color-mix(in srgb, var(--accent) 38%, transparent);
-      background: color-mix(in srgb, var(--accent) 13%, transparent);
+      color: var(--text);
+      border-color: var(--overlay-18);
+      background: var(--overlay-08);
     }
     .ctrl-btn.close-btn:hover { color: var(--danger); border-color: rgba(255,107,107,0.35); }
     .ctrl-btn svg { width: 14px; height: 14px; }
+
+    #theme-toggle-btn .icon-moon { display: none; }
+    :root[data-theme="light"] #theme-toggle-btn .icon-sun { display: none; }
+    :root[data-theme="light"] #theme-toggle-btn .icon-moon { display: block; }
 
     /* ── SETUP ── */
     #setup-panel {
@@ -107,7 +162,7 @@
       width: 0; height: 0;
       border-left: 5px solid transparent;
       border-right: 5px solid transparent;
-      border-top: 5px solid rgba(255,255,255,0.3);
+      border-top: 5px solid var(--overlay-30);
       pointer-events: none;
     }
     .provider-badge {
@@ -131,8 +186,8 @@
     .gi::placeholder { color: var(--text-dim); }
     select.gi { cursor: pointer; appearance: none; padding-left: 28px; padding-right: 28px; }
     select.gi option {
-      background: #0f0f14 !important;
-      color: rgba(255, 255, 255, 0.95) !important;
+      background: var(--dropdown-bg) !important;
+      color: var(--dropdown-text) !important;
     }
 
     .key-help {
@@ -200,14 +255,14 @@
       letter-spacing: 0.04em; transition: all 0.2s;
       display: flex; align-items: center; justify-content: center; gap: 8px;
     }
-    #validate-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); }
+    #validate-btn:hover { color: var(--text); border-color: var(--overlay-18); background: var(--overlay-06); }
     #validate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     /* ── VALIDATION STEPS ── */
     #val-steps {
       display: none;
       flex-direction: column; gap: 6px;
-      background: rgba(0,0,0,0.2);
+      background: var(--recessed-08);
       border: 1px solid var(--glass-border);
       border-radius: 10px; padding: 12px 13px;
     }
@@ -247,7 +302,7 @@
       border: 1px solid rgba(255,107,107,0.2);
       border-radius: 9px; padding: 10px 12px;
       font-family: 'DM Mono', monospace; font-size: 11px;
-      color: rgba(255,150,150,0.9); line-height: 1.6;
+      color: var(--error-text); line-height: 1.6;
     }
     #val-error strong { color: var(--danger); display: block; margin-bottom: 3px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
 
@@ -266,7 +321,7 @@
     .hotkey-panel {
       border: 1px solid var(--glass-border);
       border-radius: 10px;
-      background: rgba(0,0,0,0.16);
+      background: var(--recessed-06);
       padding: 11px;
       display: flex;
       flex-direction: column;
@@ -288,10 +343,10 @@
       grid-template-columns: 18px minmax(0, 1fr);
       gap: 8px;
       align-items: start;
-      border: 1px solid rgba(255,255,255,0.06);
+      border: 1px solid var(--overlay-06);
       border-radius: 8px;
       padding: 8px;
-      background: rgba(255,255,255,0.025);
+      background: var(--overlay-025);
     }
     .hotkey-enabled {
       width: 15px;
@@ -374,7 +429,7 @@
       cursor: pointer;
       transition: all 0.15s;
     }
-    .mini-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.18); }
+    .mini-btn:hover { color: var(--text); border-color: var(--overlay-18); }
     .mini-btn.danger:hover { color: var(--danger); border-color: rgba(255,107,107,0.35); }
     .mini-btn.primary { color: var(--accent); }
 
@@ -383,7 +438,7 @@
       text-align: center; font-family: 'DM Mono', monospace; line-height: 1.9;
     }
     .key-hint kbd {
-      background: rgba(255,255,255,0.07); border: 1px solid var(--glass-border);
+      background: var(--overlay-07); border: 1px solid var(--glass-border);
       border-radius: 4px; padding: 1px 5px; font-size: 9px; font-family: 'DM Mono', monospace;
     }
 
@@ -393,13 +448,13 @@
     #active-pill {
       margin: 8px 13px 2px;
       display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
-      background: color-mix(in srgb, var(--accent) 9%, transparent);
-      border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+      background: var(--glass-light);
+      border: 1px solid var(--glass-border);
       border-radius: 20px; padding: 3px 10px;
       font-family: 'DM Mono', monospace; font-size: 9.5px;
-      color: var(--accent); letter-spacing: 0.05em;
+      color: var(--text-dim); letter-spacing: 0.05em;
     }
-    .pdot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+    .pdot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-dim); }
 
     #messages {
       flex: 1; overflow-y: auto; padding: 8px 13px 4px;
@@ -418,11 +473,11 @@
     .msg.user {
       background: color-mix(in srgb, var(--accent) 11%, transparent);
       border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-      color: rgba(255,255,255,0.85); align-self: flex-end; border-bottom-right-radius: 3px;
+      color: var(--text-strong); align-self: flex-end; border-bottom-right-radius: 3px;
     }
     .msg.ai {
-      background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
-      color: rgba(255,255,255,0.78); align-self: flex-start; border-bottom-left-radius: 3px;
+      background: var(--glass-light); border: 1px solid var(--glass-border);
+      color: var(--text-soft); align-self: flex-start; border-bottom-left-radius: 3px;
       white-space: normal;
     }
     .msg.ai p {
@@ -432,14 +487,14 @@
       margin-bottom: 0;
     }
     .msg.ai code {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--overlay-08);
       padding: 2px 5px;
       border-radius: 4px;
       font-family: 'DM Mono', monospace;
       font-size: 0.9em;
     }
     .msg.ai pre {
-      background: rgba(0, 0, 0, 0.3);
+      background: var(--code-bg);
       border: 1px solid var(--glass-border);
       border-radius: 8px;
       padding: 10px;
@@ -467,8 +522,22 @@
     .msg.ai h2 { font-size: 1.2em; }
     .msg.ai h3 { font-size: 1.1em; }
 
+    .kw {
+      cursor: pointer;
+      border-radius: 3px;
+      transition: background 0.12s, color 0.12s;
+    }
+    .msg.ai .kw:hover, .msg.user .kw:hover {
+      background: color-mix(in srgb, var(--accent) 24%, transparent);
+      color: var(--text);
+    }
+    .kw.kw-busy {
+      animation: kwPulse 0.9s ease-in-out infinite;
+    }
+    @keyframes kwPulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.85; } }
+
     .msg.system {
-      background: transparent; border: 1px dashed rgba(255,255,255,0.07);
+      background: transparent; border: 1px dashed var(--overlay-07);
       color: var(--text-dim); align-self: center;
       font-size: 9.5px; text-align: center; max-width: 100%;
     }
@@ -479,7 +548,7 @@
 
     .thinking {
       display: flex; gap: 4px; align-items: center; padding: 9px 12px;
-      background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+      background: var(--glass-light); border: 1px solid var(--glass-border);
       border-radius: 11px; border-bottom-left-radius: 3px; align-self: flex-start;
       animation: msgIn 0.18s ease-out;
     }
@@ -495,14 +564,14 @@
     .tok { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-dim); white-space: nowrap; }
     #opacity-slider {
       width: 70px; height: 3px; -webkit-appearance: none;
-      background: rgba(255,255,255,0.1); border-radius: 2px; cursor: pointer;
+      background: var(--overlay-1); border-radius: 2px; cursor: pointer;
       margin-right: 8px;
       align-self: center;
     }
     #opacity-slider::-webkit-slider-thumb {
       -webkit-appearance: none; width: 11px; height: 11px;
-      background: var(--accent); border-radius: 50%;
-      box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 55%, transparent); cursor: pointer;
+      background: var(--text-dim); border-radius: 50%;
+      box-shadow: 0 0 4px var(--overlay-18); cursor: pointer;
     }
 
     #input-area {
@@ -525,12 +594,12 @@
     #chat-input::placeholder { color: var(--text-dim); }
     #send-btn {
       width: 36px; height: 36px; flex-shrink: 0;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      border: none; border-radius: 9px; cursor: pointer;
+      background: var(--glass-light); border: 1px solid var(--glass-border);
+      border-radius: 9px; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
-      transition: all 0.15s; color: #07070e;
+      transition: all 0.15s; color: var(--text-dim);
     }
-    #send-btn:hover { transform: scale(1.07); box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 32%, transparent); }
+    #send-btn:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--overlay-06); }
     #send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
     #send-btn svg { width: 15px; height: 15px; }
 
@@ -565,13 +634,13 @@
       padding: 12px; gap: 10px; overflow-y: auto;
     }
     .session-item {
-      padding: 10px 12px; background: rgba(255,255,255,0.03);
+      padding: 10px 12px; background: var(--overlay-03);
       border: 1px solid var(--glass-border); border-radius: 10px;
       cursor: pointer; transition: all 0.15s;
       display: flex; flex-direction: column; gap: 4px;
     }
     .session-item:hover {
-      background: rgba(255,255,255,0.07); border-color: var(--accent);
+      background: var(--overlay-07); border-color: var(--accent);
     }
     .session-title { font-size: 11.5px; color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .session-meta { font-size: 9px; color: var(--text-dim); font-family: 'DM Mono', monospace; display: flex; justify-content: space-between; }
@@ -599,6 +668,26 @@
     #memory-text::placeholder { color: var(--text-dim); }
     #memory-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     #memory-save-msg { flex: 1; font-size: 9.5px; color: var(--text-dim); font-family: 'DM Mono', monospace; }
+
+    /* ── SHORTCUTS PANEL ── */
+    #shortcuts-panel {
+      position: absolute; top: 48px; bottom: 0; left: 0; right: 0;
+      background: var(--glass); backdrop-filter: blur(40px);
+      z-index: 100; display: none; flex-direction: column;
+      border-top: 1px solid var(--glass-border);
+      padding: 12px; gap: 10px; overflow-y: auto;
+    }
+    .shortcut-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 9px 11px; background: var(--overlay-025);
+      border: 1px solid var(--glass-border); border-radius: 9px;
+    }
+    .shortcut-row .shortcut-label { font-size: 11.5px; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .shortcut-row kbd {
+      flex-shrink: 0; background: var(--overlay-07); border: 1px solid var(--glass-border);
+      border-radius: 5px; padding: 3px 8px; font-family: 'DM Mono', monospace; font-size: 10px;
+      color: var(--text-dim); white-space: nowrap;
+    }
 
     /* ── MEMORY MODE (in chat) ── */
     #mem-mode-btn {
@@ -657,13 +746,6 @@
 
   <!-- TITLEBAR -->
   <div id="titlebar">
-    <div class="title-left">
-      <div class="ghost-dot"></div>
-      <div>
-        <div class="app-title">Ghost AI</div>
-        <div class="app-sub">Invisible · Always on top</div>
-      </div>
-    </div>
     <div class="title-controls">
       <input type="range" id="opacity-slider" min="20" max="95" value="82" title="Opacity" />
       <button class="ctrl-btn" id="new-chat-btn" title="New Chat" style="display:none">
@@ -684,10 +766,25 @@
           <path d="M12 2v18"></path>
         </svg>
       </button>
+      <button class="ctrl-btn" id="theme-toggle-btn" title="Switch to light theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      </button>
       <button class="ctrl-btn" id="click-through-btn" title="Click-through off">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
           <path d="M5 3l14 10-7 1.5L9 21 5 3z"></path>
           <path d="M12 14.5l4.5 5"></path>
+        </svg>
+      </button>
+      <button class="ctrl-btn" id="shortcuts-btn" title="Keyboard shortcuts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+          <path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M10 13h4"></path>
         </svg>
       </button>
       <button class="ctrl-btn" id="settings-btn" title="Settings">⚙</button>
@@ -802,7 +899,8 @@
     <button id="start-btn">Start Chatting →</button>
 
     <div class="key-hint">
-      Toggle: <kbd>Ctrl+Shift+Space</kbd> &nbsp;·&nbsp; Click-through: <kbd>Ctrl+Shift+X</kbd> &nbsp;·&nbsp; Quit: <kbd>Ctrl+Shift+Q</kbd>
+      Toggle: <kbd>Ctrl+Shift+Space</kbd> &nbsp;·&nbsp; Screenshot &amp; Ask: <kbd>Ctrl+Shift+S</kbd> &nbsp;·&nbsp; Hide: <kbd>Ctrl+Shift+Z</kbd> &nbsp;·&nbsp; Show: <kbd>Ctrl+Shift+O</kbd><br>
+      Click-through: <kbd>Ctrl+Shift+X</kbd> &nbsp;·&nbsp; Quit: <kbd>Ctrl+Shift+Q</kbd>
     </div>
   </div>
 
@@ -831,7 +929,7 @@
           <path d="M12 2v18"></path>
         </svg>
       </button>
-      <textarea id="chat-input" placeholder="Ask anything… (Enter to send, Shift+Enter = newline)" rows="1"></textarea>
+      <textarea id="chat-input" rows="1"></textarea>
       <button id="send-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -864,6 +962,12 @@
       <button type="button" class="mini-btn" id="memory-clear-btn">Clear all</button>
       <button type="button" class="mini-btn primary" id="memory-save-btn">Save</button>
     </div>
+  </div>
+
+  <!-- SHORTCUTS PANEL -->
+  <div id="shortcuts-panel">
+    <div class="row"><div class="lbl">Keyboard Shortcuts</div></div>
+    <div id="shortcuts-list" style="display:flex;flex-direction:column;gap:8px;"></div>
   </div>
 
 </div>
@@ -957,6 +1061,9 @@ const historyPanel   = $('history-panel');
 const historyList    = $('history-list');
 const memoryBtn      = $('memory-btn');
 const memoryPanel    = $('memory-panel');
+const shortcutsBtn   = $('shortcuts-btn');
+const shortcutsPanel = $('shortcuts-panel');
+const shortcutsList  = $('shortcuts-list');
 const memoryText     = $('memory-text');
 const memorySaveBtn  = $('memory-save-btn');
 const memoryClearBtn = $('memory-clear-btn');
@@ -1501,6 +1608,7 @@ async function enterChat(sessionId = null) {
   setupPanel.style.display = 'none';
   historyPanel.style.display = 'none';
   memoryPanel.style.display = 'none';
+  shortcutsPanel.style.display = 'none';
   chatView.style.display = 'flex';
   newChatBtn.style.display = 'flex';
   historyBtn.style.display = 'flex';
@@ -1556,6 +1664,7 @@ function openSettings() {
     chatView.style.display = 'none';
     historyPanel.style.display = 'none';
     memoryPanel.style.display = 'none';
+    shortcutsPanel.style.display = 'none';
     newChatBtn.style.display = 'none';
     historyBtn.style.display = 'none';
     memoryBtn.style.display = 'none';
@@ -1597,6 +1706,10 @@ window.ghostAI.hotkeys.onEvent(hotkey => {
         enterChat(null);
       }
       break;
+    case 'screenshot-ask':
+      triggerScreenshotAsk();
+      break;
+    // 'hide-window' / 'show-window' are handled entirely in the main process.
   }
 });
 
@@ -1609,6 +1722,7 @@ historyBtn.addEventListener('click', async () => {
     return;
   }
   memoryPanel.style.display = 'none';
+  shortcutsPanel.style.display = 'none';
   historyPanel.style.display = 'flex';
   historyList.innerHTML = '<div style="color:var(--text-dim);font-size:11px;text-align:center;">Loading...</div>';
   
@@ -1654,6 +1768,7 @@ memoryBtn.addEventListener('click', async () => {
     return;
   }
   historyPanel.style.display = 'none';
+  shortcutsPanel.style.display = 'none';
   memorySaveMsg.textContent = '';
   try {
     const memRes = await window.ghostAI.db.getMemory();
@@ -1685,11 +1800,66 @@ memoryClearBtn.addEventListener('click', () => {
   memoryText.focus();
 });
 
+// ── SHORTCUTS PANEL ──
+// Reflects the live hotkey list (including any custom/rebound ones) rather than a hardcoded string.
+function formatAccelerator(accelerator) {
+  return (accelerator || '').replace('CommandOrControl', window.ghostAI.platform === 'darwin' ? 'Cmd' : 'Ctrl');
+}
+
+function renderShortcutsList() {
+  shortcutsList.innerHTML = '';
+  const active = hotkeys.filter(h => h.enabled && h.accelerator && !h.isDraft);
+  if (!active.length) {
+    shortcutsList.innerHTML = '<div style="color:var(--text-dim);font-size:11px;text-align:center;">No active shortcuts. Enable some in Settings → Global Hotkeys.</div>';
+    return;
+  }
+  active.forEach(h => {
+    const row = document.createElement('div');
+    row.className = 'shortcut-row';
+    const label = document.createElement('span');
+    label.className = 'shortcut-label';
+    label.textContent = h.label;
+    const kbd = document.createElement('kbd');
+    kbd.textContent = formatAccelerator(h.accelerator);
+    row.append(label, kbd);
+    shortcutsList.appendChild(row);
+  });
+}
+
+shortcutsBtn.addEventListener('click', () => {
+  if (shortcutsPanel.style.display === 'flex') {
+    shortcutsPanel.style.display = 'none';
+    return;
+  }
+  historyPanel.style.display = 'none';
+  memoryPanel.style.display = 'none';
+  renderShortcutsList();
+  shortcutsPanel.style.display = 'flex';
+});
+
 // ═══════════════════════════════════════════════
-//  OPACITY
+//  OPACITY — scales the whole panel (background, text, icons, everything)
 // ═══════════════════════════════════════════════
-$('opacity-slider').addEventListener('input', e => {
-  $('app').style.background = `rgba(9,9,14,${e.target.value/100})`;
+const opacitySlider = $('opacity-slider');
+function applyOpacity(value) {
+  $('app').style.opacity = value / 100;
+}
+applyOpacity(opacitySlider.value);
+opacitySlider.addEventListener('input', e => applyOpacity(e.target.value));
+
+// ═══════════════════════════════════════════════
+//  THEME — dark (default) / light, persisted across restarts
+// ═══════════════════════════════════════════════
+const themeToggleBtn = $('theme-toggle-btn');
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  themeToggleBtn.title = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+}
+applyTheme(localStorage.getItem('ghost_theme') || 'dark');
+themeToggleBtn.addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  localStorage.setItem('ghost_theme', next);
+  applyTheme(next);
 });
 
 // ═══════════════════════════════════════════════
@@ -1712,9 +1882,125 @@ function addMsg(text, role) {
   } else {
     el.textContent = text;
   }
+  if (role === 'ai' || role === 'user') makeWordsClickable(el);
   messagesEl.appendChild(el);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return el;
+}
+
+// ═══════════════════════════════════════════════
+//  CLICK-A-KEYWORD → SCREENSHOT → SHORT AI ANSWER
+// ═══════════════════════════════════════════════
+// Wraps every word in a message in a clickable <span class="kw">, skipping
+// code/links so markdown structure and copy/paste stay intact.
+const KW_SKIP_TAGS = new Set(['CODE', 'PRE', 'A', 'STYLE', 'SCRIPT']);
+function makeWordsClickable(root) {
+  function walk(node) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if (KW_SKIP_TAGS.has(node.tagName)) return;
+      Array.from(node.childNodes).forEach(walk);
+    } else if (node.nodeType === Node.TEXT_NODE) {
+      if (!node.textContent || !node.textContent.trim()) return;
+      const frag = document.createDocumentFragment();
+      node.textContent.split(/(\s+)/).forEach(part => {
+        if (!part) return;
+        if (/^\s+$/.test(part)) {
+          frag.appendChild(document.createTextNode(part));
+        } else {
+          const span = document.createElement('span');
+          span.className = 'kw';
+          span.textContent = part;
+          frag.appendChild(span);
+        }
+      });
+      node.parentNode.replaceChild(frag, node);
+    }
+  }
+  Array.from(root.childNodes).forEach(walk);
+}
+
+messagesEl.addEventListener('click', (e) => {
+  const span = e.target.closest('.kw');
+  if (!span) return;
+  const sel = window.getSelection();
+  if (sel && sel.toString().length > 0) return; // let text selection/copy through untouched
+  const word = span.textContent.trim().replace(/^[.,!?;:()"'`]+|[.,!?;:()"'`]+$/g, '');
+  if (!word) return;
+  askAboutKeyword(word, span);
+});
+
+// Shared core for both the click-a-keyword flow and the screenshot hotkey:
+// capture the screen, send it + an instruction to the AI, post the short answer.
+async function runScreenshotQuery(userLabel, apiInstruction, strictNote, busySpan) {
+  if (isTyping || memMode) return;
+  if (!apiKey || !model) { addMsg('⚠ Connect an AI provider first.', 'error'); return; }
+
+  isTyping = true;
+  sendBtn.style.display = 'none';
+  stopBtn.classList.add('visible');
+  if (busySpan) busySpan.classList.add('kw-busy');
+
+  addMsg(userLabel, 'user');
+  history.push({ role: 'user', content: apiInstruction });
+  window.ghostAI.db.addMessage(currentSessionId, 'user', userLabel);
+
+  showThinking();
+
+  try {
+    const shot = await window.ghostAI.captureScreenshot();
+    if (!shot.success) {
+      hideThinking();
+      addMsg(`⚠ ${shot.error || 'Could not capture the screen.'}`, 'error');
+      history.pop();
+      return;
+    }
+
+    const strictPrompt = buildPersonaPrompt() + `\n\n[STRICT MODE]: ${strictNote} Answer in 1-3 short sentences MAX. Be direct, no preamble, no filler, straight to the point.`;
+
+    const res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: strictPrompt, image: shot.dataUrl });
+    hideThinking();
+    if (res.success) {
+      addMsg(res.content, 'ai');
+      history.push({ role: 'assistant', content: res.content });
+      window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
+      tokens = Math.round(history.reduce((a, m) => a + m.content.length, 0) / 4);
+      tokenEl.textContent = `tokens left: ${Math.max(0, getContextLimit(model) - tokens).toLocaleString()}`;
+    } else if (res.aborted) {
+      addMsg('⏹ Stopped.', 'system');
+      history.pop();
+    } else {
+      addMsg(`⚠ ${res.error}`, 'error');
+      history.pop();
+    }
+  } catch (e) {
+    hideThinking();
+    addMsg(`⚠ ${e.message}`, 'error');
+    history.pop();
+  } finally {
+    if (busySpan) busySpan.classList.remove('kw-busy');
+    stopBtn.classList.remove('visible');
+    sendBtn.style.display = 'flex';
+    isTyping = false;
+  }
+}
+
+function askAboutKeyword(word, span) {
+  return runScreenshotQuery(
+    `📸 ${word}`,
+    `[Screenshot attached] Briefly explain or answer, using what's visible on my screen for context: "${word}"`,
+    `I just clicked the word "${word}" while looking at my screen — the attached screenshot is what I'm seeing right now. Use it for context if relevant to "${word}".`,
+    span
+  );
+}
+
+// Triggered by the Screenshot & Ask AI hotkey (default Ctrl+Shift+S) — no specific word, just "what's on screen".
+function triggerScreenshotAsk() {
+  if (chatView.style.display === 'none') return; // not connected yet — nowhere to show the answer
+  return runScreenshotQuery(
+    '📸 Screenshot',
+    `[Screenshot attached] Look at what's on my screen right now. If there's a visible question, problem, or task, answer it directly. Otherwise, briefly note what's relevant.`,
+    `I just pressed the screenshot hotkey — the attached image is my screen right now. If there's a clear question or problem visible, answer it straight; otherwise briefly note what's relevant.`
+  );
 }
 
 function showThinking() {
@@ -1816,7 +2102,7 @@ function setMemMode(on) {
     : 'Memory Mode — tell me what to remember, change, or forget';
   chatInput.placeholder = on
     ? 'Tell me what to remember, change, or forget… (Enter to apply)'
-    : 'Ask anything… (Enter to send, Shift+Enter = newline)';
+    : '';
   chatInput.focus();
 }
 
