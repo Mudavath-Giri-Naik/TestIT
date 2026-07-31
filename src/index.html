@@ -1397,18 +1397,13 @@ function createHotkeyRow(hotkey) {
   const buttons = document.createElement('div');
   buttons.className = 'hotkey-actions';
 
-  const save = document.createElement('button');
-  save.type = 'button';
-  save.className = 'mini-btn primary';
-  save.textContent = hotkey.isDraft ? 'Create' : 'Save';
-
   const remove = document.createElement('button');
   remove.type = 'button';
   remove.className = 'mini-btn danger';
   remove.textContent = hotkey.isDraft ? 'Cancel' : 'Remove';
   remove.style.display = hotkey.locked ? 'none' : '';
 
-  buttons.append(save, remove);
+  buttons.append(remove);
   main.append(titleRow, controls, msg, buttons);
   row.append(enabled, main);
 
@@ -1428,9 +1423,22 @@ function createHotkeyRow(hotkey) {
     }
     capture.value = accelerator;
     const validation = await window.ghostAI.hotkeys.validateAccelerator(accelerator, hotkey.isDraft ? null : hotkey.id);
-    msg.className = validation.success ? 'hotkey-msg ok' : 'hotkey-msg error';
-    msg.textContent = validation.success ? 'Shortcut is available.' : validation.error;
-    if (validation.success) capture.value = validation.accelerator;
+    if (!validation.success) {
+      msg.className = 'hotkey-msg error';
+      msg.textContent = validation.error;
+      return;
+    }
+    capture.value = validation.accelerator;
+    // Auto-save immediately once a valid shortcut is captured — no manual save needed.
+    const label = hotkey.locked ? hotkey.label : (hotkeyActions[action.value] || 'Custom hotkey');
+    const payload = {
+      action: action.value,
+      label,
+      accelerator: capture.value,
+      enabled: enabled.checked,
+    };
+    if (hotkey.isDraft) await registerHotkey(payload, msg);
+    else await saveHotkey(hotkey.id, payload, msg);
   });
 
   enabled.addEventListener('change', async () => {
@@ -1438,21 +1446,12 @@ function createHotkeyRow(hotkey) {
     await saveHotkey(hotkey.id, { enabled: enabled.checked }, msg);
   });
 
-  action.addEventListener('change', () => {
+  action.addEventListener('change', async () => {
     const nextLabel = hotkeyActions[action.value] || hotkey.label;
     title.textContent = nextLabel;
-  });
-
-  save.addEventListener('click', async () => {
-    const label = hotkey.locked ? hotkey.label : (hotkeyActions[action.value] || 'Custom hotkey');
-    const payload = {
-      action: action.value,
-      label,
-      accelerator: capture.value.trim(),
-      enabled: enabled.checked,
-    };
-    if (hotkey.isDraft) await registerHotkey(payload, msg);
-    else await saveHotkey(hotkey.id, payload, msg);
+    // Draft hotkeys have no accelerator yet, so there's nothing to persist until one is captured.
+    if (hotkey.isDraft) return;
+    await saveHotkey(hotkey.id, { action: action.value, label: nextLabel }, msg);
   });
 
   remove.addEventListener('click', async () => {
