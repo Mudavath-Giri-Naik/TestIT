@@ -216,6 +216,16 @@
       color: var(--dropdown-text) !important;
     }
 
+    /* model cycle button — replaces the model dropdown with a click-to-rotate icon */
+    .model-cycle-btn {
+      display: flex; align-items: center; gap: 8px;
+      cursor: pointer; text-align: left;
+    }
+    .model-cycle-btn:hover { border-color: var(--text-dim); }
+    .model-cycle-icon { flex-shrink: 0; width: 15px; height: 15px; }
+    .model-cycle-btn.spin .model-cycle-icon { animation: spin 0.4s linear; }
+    #model-cycle-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     .key-help {
       font-size: 10px; color: var(--text-dim);
       font-family: 'DM Mono', monospace;
@@ -910,10 +920,18 @@
       </div>
     </div>
 
-    <!-- Model dropdown -->
+    <!-- Model cycle button — click to rotate through this provider's models -->
     <div class="row">
       <div class="lbl">Model</div>
-      <select class="gi" id="model-select"></select>
+      <button type="button" class="gi model-cycle-btn" id="model-cycle-btn" title="Click to switch model">
+        <svg class="model-cycle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        <span id="model-cycle-label"></span>
+      </button>
+      <select class="gi" id="model-select" style="display:none"></select>
     </div>
 
     <!-- API Key -->
@@ -1006,6 +1024,7 @@
     <div id="val-error">
       <strong>⚠ What went wrong</strong>
       <span id="val-error-msg"></span>
+      <button id="val-force-retry-btn" type="button" class="mini-btn primary" style="display:none; margin-top:8px;">Force Retry Now</button>
     </div>
 
     <!-- Start button (shown only after success) -->
@@ -1124,9 +1143,11 @@ const CFG = {
     keyLbl: 'Google AI API Key', keyPlaceholder: 'AIzaSy...',
     keyHelp: 'Get free key → aistudio.google.com/app/apikey',
     models: [
-      { v: 'gemini-2.5-flash', l: 'Gemini 2.5 Flash · Recommended' },
-      { v: 'gemini-2.5-pro',   l: 'Gemini 2.5 Pro · Powerful' },
-      { v: 'gemini-2.0-flash', l: 'Gemini 2.0 Flash · Stable' },
+      { v: 'gemini-3.6-flash',      l: 'Gemini 3.6 Flash · Latest stable, agentic' },
+      { v: 'gemini-3.5-flash',      l: 'Gemini 3.5 Flash · Coding & logic' },
+      { v: 'gemini-3.5-flash-lite', l: 'Gemini 3.5 Flash Lite · Fastest, low-cost' },
+      { v: 'gemini-2.5-flash',      l: 'Gemini 2.5 Flash · 1M context' },
+      { v: 'gemini-2.5-flash-lite', l: 'Gemini 2.5 Flash Lite · Cost-efficient' },
     ],
   },
   grok: {
@@ -1167,6 +1188,8 @@ try {
 const $ = id => document.getElementById(id);
 const providerSelect = $('provider-select');
 const modelSelect    = $('model-select');
+const modelCycleBtn  = $('model-cycle-btn');
+const modelCycleLabel = $('model-cycle-label');
 const apiInput       = $('api-key-input');
 const togglePassBtn  = $('toggle-password-btn');
 const copyKeyBtn     = $('copy-key-btn');
@@ -1175,6 +1198,7 @@ const validateBtn    = $('validate-btn');
 const valSteps       = $('val-steps');
 const valError       = $('val-error');
 const valErrorMsg    = $('val-error-msg');
+const forceRetryBtn  = $('val-force-retry-btn');
 const startBtn       = $('start-btn');
 const setupPanel     = $('setup-panel');
 const chatView       = $('chat-view');
@@ -1279,6 +1303,7 @@ async function applyProvider(p) {
   });
   const saved = localStorage.getItem(`ghost_model_${p}`);
   if (saved) modelSelect.value = saved;
+  syncModelLabel();
 
   const savedKey = localStorage.getItem(`ghost_key_${p}`) || '';
   apiInput.value = savedKey;
@@ -1298,8 +1323,24 @@ providerSelect.addEventListener('change', () => {
   if (localStorage.getItem(profileKey('verified')) !== '1') markSettingsDirty();
 });
 modelSelect.addEventListener('change', () => {
+  syncModelLabel();
   saveActiveSettings();
   markSettingsDirty();
+});
+
+function syncModelLabel() {
+  const opt = modelSelect.options[modelSelect.selectedIndex];
+  if (modelCycleLabel) modelCycleLabel.textContent = opt ? opt.textContent : 'No models available';
+}
+
+modelCycleBtn.addEventListener('click', () => {
+  const n = modelSelect.options.length;
+  if (!n) return;
+  modelSelect.selectedIndex = (modelSelect.selectedIndex + 1) % n;
+  modelSelect.dispatchEvent(new Event('change'));
+  modelCycleBtn.classList.remove('spin');
+  void modelCycleBtn.offsetWidth;
+  modelCycleBtn.classList.add('spin');
 });
 apiInput.addEventListener('input', () => {
   saveActiveSettings();
@@ -1391,12 +1432,27 @@ async function refreshTokensDisplay() {
   tokenEl.textContent = `tokens left: ${left.toLocaleString()}`;
 }
 
+let rateLimitTimer = null;
+
 function resetValidation() {
   validated = false;
   startBtn.classList.remove('visible');
   valSteps.style.display = 'none';
   valError.style.display = 'none';
+  clearTimeout(rateLimitTimer);
+  forceRetryBtn.style.display = 'none';
   ['format','reach','auth','model','chat'].forEach(s => setStep(s, 'pending', '○'));
+}
+
+// A 429 during validation shouldn't read as a permanent lock: auto soft-reset
+// the failed state after the free-tier RPM window clears, and let the user
+// jump straight to a fresh validation attempt without waiting.
+function startRateLimitCooldown() {
+  clearTimeout(rateLimitTimer);
+  forceRetryBtn.style.display = 'inline-flex';
+  rateLimitTimer = setTimeout(() => {
+    resetValidation();
+  }, 60000);
 }
 
 // restore saved system prompt
@@ -1720,10 +1776,10 @@ function createApiKeyRow(row) {
     if (res && res.success) {
       apiKeyRows = res.data;
       apiInput.value = row.key_value;
+      apiKey = row.key_value;
       saveActiveSettings();
-      markSettingsDirty();
       renderApiKeys();
-      showApikeyMessage('Switched active key — re-verify to use it.', 'ok');
+      showApikeyMessage('Switched active key — now in use.', 'ok');
     }
   });
 
@@ -1823,7 +1879,10 @@ function setStep(id, state, icon, label) {
 // ═══════════════════════════════════════════════
 //  VALIDATE
 // ═══════════════════════════════════════════════
-validateBtn.addEventListener('click', async () => {
+async function runValidation() {
+  clearTimeout(rateLimitTimer);
+  forceRetryBtn.style.display = 'none';
+
   const key = apiInput.value.trim();
   const mdl = modelSelect.value;
   const p = provider;
@@ -1881,10 +1940,11 @@ validateBtn.addEventListener('click', async () => {
   const result = await window.ghostAI.validateKey({ provider: p, apiKey: key, model: mdl });
 
   if (!result.success) {
-    const errMsg = result.error || 'Unknown error';
-    const isAuthErr = errMsg.toLowerCase().includes('invalid') || errMsg.toLowerCase().includes('unauthorized') || errMsg.toLowerCase().includes('401') || errMsg.toLowerCase().includes('403');
-    const isModelErr = errMsg.toLowerCase().includes('model') || errMsg.toLowerCase().includes('404');
-    const isRateErr = errMsg.toLowerCase().includes('rate') || errMsg.toLowerCase().includes('429') || errMsg.toLowerCase().includes('quota');
+    const rawErr = result.error || 'Unknown error';
+    const errMsg = `Model tested: ${mdl}\n\n` + rawErr;
+    const isAuthErr = rawErr.toLowerCase().includes('invalid') || rawErr.toLowerCase().includes('unauthorized') || rawErr.toLowerCase().includes('401') || rawErr.toLowerCase().includes('403');
+    const isModelErr = rawErr.toLowerCase().includes('model') || rawErr.toLowerCase().includes('404');
+    const isRateErr = rawErr.toLowerCase().includes('rate') || rawErr.toLowerCase().includes('429') || rawErr.toLowerCase().includes('quota');
 
     if (isAuthErr) {
       setStep('auth', 'fail', '✕', 'Authentication failed');
@@ -1900,7 +1960,8 @@ validateBtn.addEventListener('click', async () => {
       setStep('auth', 'ok', '✓', 'Key authenticated');
       setStep('model', 'ok', '✓', 'Model found');
       setStep('chat', 'fail', '✕', 'Rate limited');
-      showError(errMsg + '\n\n💡 Wait 30–60 seconds then try again. Free tier has RPM limits.');
+      showError(errMsg + '\n\n💡 Wait 30–60 seconds then try again, or hit Force Retry Now. This auto-clears in 60s either way.');
+      startRateLimitCooldown();
     } else {
       setStep('auth', 'fail', '✕', 'Request failed');
       setStep('model', 'skip', '–');
@@ -1931,6 +1992,15 @@ validateBtn.addEventListener('click', async () => {
 
   await delay(300);
   startBtn.classList.add('visible');
+}
+
+validateBtn.addEventListener('click', runValidation);
+
+forceRetryBtn.addEventListener('click', () => {
+  clearTimeout(rateLimitTimer);
+  forceRetryBtn.style.display = 'none';
+  resetValidation();
+  runValidation();
 });
 
 function showError(msg) {
@@ -2243,7 +2313,7 @@ chatInput.addEventListener('keydown', e => {
 sendBtn.addEventListener('click', send);
 searchBtn.addEventListener('click', () => chatInput.focus());
 
-function addMsg(text, role, images, presetPreview) {
+function addMsg(text, role, images, presetPreview, onRetry) {
   const el = document.createElement('div');
   el.className = `msg ${role}`;
   if (presetPreview) {
@@ -2269,6 +2339,20 @@ function addMsg(text, role, images, presetPreview) {
     el.appendChild(document.createTextNode(text));
   }
   if (role === 'ai' || role === 'user') makeWordsClickable(el);
+  if (typeof onRetry === 'function') {
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'mini-btn primary';
+    retryBtn.style.display = 'block';
+    retryBtn.style.marginTop = '8px';
+    retryBtn.textContent = 'Force Retry Now';
+    retryBtn.addEventListener('click', () => {
+      retryBtn.disabled = true;
+      retryBtn.textContent = 'Retrying...';
+      onRetry();
+    });
+    el.appendChild(retryBtn);
+  }
   messagesEl.appendChild(el);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return el;
@@ -2399,37 +2483,17 @@ function trimmedHistory() {
 //  for that request instead of the default clone persona.
 // ═══════════════════════════════════════════════
 function buildCodingSystemPrompt(language) {
-  return `You are a coding assistant that solves coding questions from screenshots.
-
-Rules:
-1. Read the screenshot carefully — identify the problem statement AND any starter/template code already given (function signatures, class names, imports, comments).
-2. Your output must CONTINUE the exact given template — do not rewrite, rename, or restructure it. Keep function/class/variable names, parameter order, and code style exactly as shown.
-3. Write the solution in ${language} only.
-4. Output ONLY the complete, final code — no explanations, no alternate approaches, no "here's how it works" text, unless I explicitly ask for an explanation.
-5. If the screenshot has partial code with a placeholder (e.g., "// your code here" or "pass"), fill only that part but return the FULL code (template + your solution) so it's ready to run/paste.
-6. Do not change the problem's expected input/output format or function return type.
-7. If the image is unclear or ambiguous, make the most reasonable assumption based on standard coding problem conventions and proceed — don't ask clarifying questions unless the template is genuinely missing.`;
+  return `Solve the coding question in the screenshot using ${language}. If starter/template code is given, continue it exactly as-is (same names, structure, style) — don't rewrite it. Write the most optimized solution for both time and space complexity, and make sure it passes all hidden test cases, not just the visible examples/sample cases shown. Reply with only the full, final code — no explanation.`;
 }
 
-const MCQ_SYSTEM_PROMPT = `You are an MCQ-solving assistant that answers multiple-choice questions from screenshots.
-
-Rules:
-1. Read the screenshot carefully — identify the question and ALL options exactly as given (A/B/C/D or 1/2/3/4, whatever format is shown).
-2. Output format:
-   - Answer: [correct option letter/number + option text]
-   - Reason: 1-3 short lines explaining why (only if I ask for reasoning; otherwise skip)
-3. If multiple questions are in one screenshot, answer ALL of them, numbered in the same order as shown.
-4. Do not skip a question or say "it depends" — always commit to the single best answer based on standard/most accepted knowledge.
-5. If the question is ambiguous or the image is unclear, still give your best answer and briefly note the uncertainty in one line — don't just ask for clarification.
-6. No extra commentary, no repeating the full question back, no unrelated explanation unless asked.
-7. If it's a numerical/calculation-based MCQ, show the calculation briefly only if asked; otherwise just the final answer.
-
-Wait for my screenshot before responding.`;
+const MCQ_SYSTEM_PROMPT = `Answer the MCQ(s) in the screenshot. Reply with only the option letter/number for each — no text, no reasoning. If multiple questions, number them.`;
 
 // Same minimal line-icon set the rest of the titlebar uses (stroke=currentColor) —
 // no emoji, no per-preset brand colors. The label text tells presets apart.
 const CODE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`;
 const MCQ_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`;
+const WRONG_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+const OPTIMISE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
 
 const PRESETS = {
   coding: {
@@ -2440,6 +2504,8 @@ const PRESETS = {
   java:   { icon: CODE_ICON_SVG, label: 'Java',   title: 'Coding — Java',   prompt: 'Language = Java' },
   cpp:    { icon: CODE_ICON_SVG, label: 'C++',    title: 'Coding — C++',    prompt: 'Language = C++' },
   mcq:    { icon: MCQ_ICON_SVG,  label: 'MCQ',    title: 'Multiple-choice questions', prompt: MCQ_SYSTEM_PROMPT },
+  wrong:    { icon: WRONG_ICON_SVG,    label: 'Wrong answer', title: 'Tell the AI its last answer was wrong', prompt: 'Wrong answer' },
+  optimise: { icon: OPTIMISE_ICON_SVG, label: 'Optimise',     title: 'Ask the AI to optimise its last answer', prompt: 'Optimise' },
 };
 
 function renderPresetStrip() {
@@ -2503,29 +2569,60 @@ async function send() {
     // (plus anything else typed/edited) — it's sent as-is, exactly what's visible.
     const label = txt || `📸 ${images.length} screenshot${images.length > 1 ? 's' : ''}`;
     addMsg(label, 'user', images);
-    history.push({ role: 'user', content: txt || `[${images.length} screenshot(s) attached] Look at the screen and help with what's relevant.` });
 
     // Save to DB
     window.ghostAI.db.addMessage(currentSessionId, 'user', label);
 
-    showThinking();
+    await runChatTurn(txt, images);
+  } catch (e) {
+    addMsg(`⚠ ${e.message || 'Something went wrong sending that.'}`, 'error');
+  } finally {
+    hideThinking();
+    stopBtn.classList.remove('visible');
+    sendBtn.style.display = 'flex';
+    sendBtn.disabled = false;
+    isTyping = false;
+    chatInput.focus();
+  }
+}
 
-    const activeSystemPrompt = buildPersonaPrompt();
+// Shared by send() and the chat-error "Force Retry Now" button — issues the
+// actual request/response handling. Kept separate from send() so a retry can
+// re-run just this part without adding a duplicate user bubble/DB row.
+async function runChatTurn(txt, images) {
+  history.push({ role: 'user', content: txt || `[${images.length} screenshot(s) attached] Look at the screen and help with what's relevant.` });
 
-    const res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: activeSystemPrompt, images });
-    if (res.success) {
-      addMsg(res.content, 'ai');
-      history.push({ role: 'assistant', content: res.content });
-      window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
-      applyTokenUsage(res);
-      // Memory is now fully user-controlled via Memory Mode — no silent auto-overwrite.
-    } else if (res.aborted) {
-      addMsg('⏹ Generation stopped.', 'system');
-      history.pop();
-    } else {
-      addMsg(`⚠ ${res.error}`, 'error');
-      history.pop();
-    }
+  showThinking();
+
+  const activeSystemPrompt = buildPersonaPrompt();
+
+  const res = await window.ghostAI.chat({ provider, apiKey, messages: trimmedHistory(), model, systemPrompt: activeSystemPrompt, images });
+  if (res.success) {
+    addMsg(res.content, 'ai');
+    history.push({ role: 'assistant', content: res.content });
+    window.ghostAI.db.addMessage(currentSessionId, 'assistant', res.content);
+    applyTokenUsage(res);
+    // Memory is now fully user-controlled via Memory Mode — no silent auto-overwrite.
+  } else if (res.aborted) {
+    addMsg('⏹ Generation stopped.', 'system');
+    history.pop();
+  } else {
+    const rawErr = res.error || '';
+    const isQuotaErr = /rate|429|quota/i.test(rawErr);
+    addMsg(`⚠ [${model}] ${rawErr}`, 'error', null, null, isQuotaErr ? () => retryChatTurn(txt, images) : undefined);
+    history.pop();
+  }
+}
+
+// Re-runs a failed turn without re-adding the user's message bubble/DB row —
+// that's already on screen from the original attempt.
+async function retryChatTurn(txt, images) {
+  if (isTyping) return;
+  isTyping = true;
+  sendBtn.style.display = 'none';
+  stopBtn.classList.add('visible');
+  try {
+    await runChatTurn(txt, images);
   } catch (e) {
     addMsg(`⚠ ${e.message || 'Something went wrong sending that.'}`, 'error');
   } finally {
