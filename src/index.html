@@ -57,6 +57,8 @@
       --dropdown-bg: #0f0f14;
       --dropdown-text: rgba(255,255,255,0.95);
       --error-text: rgba(255,150,150,0.9);
+      --btn-primary-bg: rgba(255,255,255,0.92);
+      --btn-primary-text: #0b0b10;
     }
 
     :root[data-theme="light"] {
@@ -88,6 +90,8 @@
       --dropdown-bg: #ffffff;
       --dropdown-text: rgba(16,16,22,0.92);
       --error-text: rgba(180,40,40,0.95);
+      --btn-primary-bg: rgba(16,16,22,0.92);
+      --btn-primary-text: #ffffff;
     }
 
     html, body {
@@ -168,7 +172,7 @@
     .provider-badge {
       position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
       width: 8px; height: 8px; border-radius: 50%;
-      background: var(--accent); pointer-events: none;
+      background: var(--text-dim); pointer-events: none;
       transition: background 0.3s;
     }
 
@@ -180,8 +184,8 @@
       outline: none; width: 100%; transition: border-color 0.2s, box-shadow 0.2s;
     }
     .gi:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+      border-color: var(--text-dim);
+      box-shadow: 0 0 0 2px var(--overlay-08);
     }
     .gi::placeholder { color: var(--text-dim); }
     select.gi { cursor: pointer; appearance: none; padding-left: 28px; padding-right: 28px; }
@@ -281,7 +285,7 @@
     }
     .vstep.pending .vstep-icon { color: var(--text-dim); }
     .vstep.loading .vstep-icon {
-      border-color: var(--accent); color: var(--accent);
+      border-color: var(--text-dim); color: var(--text);
       animation: spin 0.8s linear infinite;
     }
     .vstep.loading { color: var(--text); }
@@ -309,13 +313,13 @@
     /* ── START BUTTON ── */
     #start-btn {
       display: none;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      background: var(--btn-primary-bg);
       border: none; border-radius: 9px; padding: 11px;
-      color: #07070e; font-family: 'Syne', sans-serif;
+      color: var(--btn-primary-text); font-family: 'Syne', sans-serif;
       font-size: 13px; font-weight: 700; cursor: pointer;
       letter-spacing: 0.04em; transition: all 0.2s;
     }
-    #start-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 30%, transparent); }
+    #start-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px var(--overlay-18); }
     #start-btn.visible { display: block; }
 
     .hotkey-panel {
@@ -352,7 +356,7 @@
       width: 15px;
       height: 15px;
       margin-top: 2px;
-      accent-color: var(--accent);
+      accent-color: var(--text-dim);
       cursor: pointer;
     }
     .hotkey-main {
@@ -431,7 +435,7 @@
     }
     .mini-btn:hover { color: var(--text); border-color: var(--overlay-18); }
     .mini-btn.danger:hover { color: var(--danger); border-color: rgba(255,107,107,0.35); }
-    .mini-btn.primary { color: var(--accent); }
+    .mini-btn.primary { color: var(--text); }
 
     .key-hint {
       font-size: 9.5px; color: var(--text-dim);
@@ -590,7 +594,7 @@
       scrollbar-width: none;
     }
     #chat-input::-webkit-scrollbar { width: 0; height: 0; }
-    #chat-input:focus { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+    #chat-input:focus { border-color: var(--text-dim); }
     #chat-input::placeholder { color: var(--text-dim); }
     #send-btn {
       width: 36px; height: 36px; flex-shrink: 0;
@@ -599,7 +603,7 @@
       display: flex; align-items: center; justify-content: center;
       transition: all 0.15s; color: var(--text-dim);
     }
-    #send-btn:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--overlay-06); }
+    #send-btn:hover { color: var(--text); background: var(--overlay-08); }
     #send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
     #send-btn svg { width: 15px; height: 15px; }
 
@@ -697,16 +701,15 @@
       display: flex; align-items: center; justify-content: center;
       transition: all 0.15s;
     }
-    #mem-mode-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+    #mem-mode-btn:hover { color: var(--text); background: var(--overlay-08); }
     #mem-mode-btn svg { width: 16px; height: 16px; }
     #input-area.mem-mode #mem-mode-btn {
-      color: #07070e; border-color: transparent;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 40%, transparent);
+      color: var(--text); border-color: var(--overlay-18);
+      background: var(--overlay-08);
     }
     #input-area.mem-mode #chat-input {
-      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-      background: color-mix(in srgb, var(--accent) 7%, transparent);
+      border-color: var(--overlay-18);
+      background: var(--overlay-06);
     }
     .msg.memory {
       align-self: center; max-width: 96%;
@@ -723,7 +726,7 @@
       display: flex; align-items: center; justify-content: center;
       transition: all 0.15s;
     }
-    #listen-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+    #listen-btn:hover { color: var(--text); background: var(--overlay-08); }
     #listen-btn svg { width: 16px; height: 16px; }
     #listen-btn.listening {
       color: #07070e; border-color: transparent;
@@ -1670,6 +1673,14 @@ function openSettings() {
     memoryBtn.style.display = 'none';
     setupPanel.style.display = 'flex';
     resetBtn();
+  } else if (currentSessionId) {
+    // Already connected before — clicking again should return to that chat, not sit stuck on setup.
+    setupPanel.style.display = 'none';
+    chatView.style.display = 'flex';
+    newChatBtn.style.display = 'flex';
+    historyBtn.style.display = 'flex';
+    memoryBtn.style.display = 'flex';
+    chatInput.focus();
   }
 }
 
