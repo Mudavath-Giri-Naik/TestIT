@@ -1,6 +1,11 @@
 -- Ghost AI — Supabase schema
 -- Run this once in the Supabase SQL Editor (Dashboard → SQL Editor → New query → paste → Run).
 -- Safe to re-run: every statement is idempotent (IF NOT EXISTS / OR REPLACE).
+--
+-- There is no login step in the app — every install of Ghost AI reads and
+-- writes these tables directly through the anon key. RLS is enabled but the
+-- policies below are fully open (using (true)), so access is controlled only
+-- by who has the anon key (shipped in the app itself), not by a user account.
 
 create table if not exists sessions (
   id text primary key,
@@ -60,8 +65,14 @@ drop policy if exists "own rows" on memory;
 drop policy if exists "own rows" on api_keys;
 drop policy if exists "own rows" on app_state;
 
-create policy "own rows" on sessions  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own rows" on messages  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own rows" on memory    for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own rows" on api_keys  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own rows" on app_state for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "public access" on sessions;
+drop policy if exists "public access" on messages;
+drop policy if exists "public access" on memory;
+drop policy if exists "public access" on api_keys;
+drop policy if exists "public access" on app_state;
+
+create policy "public access" on sessions  for all using (true) with check (true);
+create policy "public access" on messages  for all using (true) with check (true);
+create policy "public access" on memory    for all using (true) with check (true);
+create policy "public access" on api_keys  for all using (true) with check (true);
+create policy "public access" on app_state for all using (true) with check (true);

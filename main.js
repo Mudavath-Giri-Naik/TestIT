@@ -73,13 +73,12 @@ function sendToRenderer(channel, payload) {
   mainWindow.webContents.send(channel, payload);
 }
 
-// Signs in to Supabase, then pulls anything that exists in the cloud but not
-// on this machine (e.g. sessions created on another device). Local rows are
-// never overwritten — this only ever fills gaps. Fully fail-soft: any error
-// here just means the app stays local-only, nothing else is affected.
+// Pulls anything that exists in the shared cloud store but not on this machine
+// (e.g. sessions or API keys added on another install — there is no login step,
+// every install reads/writes the same shared tables). Local rows are never
+// overwritten — this only ever fills gaps. Fully fail-soft: any error here
+// just means the app stays local-only, nothing else is affected.
 async function syncWithSupabase() {
-  const ok = await supabaseSync.signIn();
-  if (!ok) return;
   try {
     const remote = await supabaseSync.pullAll();
     if (!remote) return;
@@ -101,12 +100,16 @@ async function syncWithSupabase() {
       db.updateCoreMemory(remote.memory.core_memory);
     }
     const localKeyIds = new Set(db.getAllApiKeys().map(k => k.id));
+    let importedKeys = false;
     for (const k of remote.apiKeys) {
-      if (!localKeyIds.has(k.id)) db.importApiKey(k);
+      if (!localKeyIds.has(k.id)) { db.importApiKey(k); importedKeys = true; }
     }
     if (remote.lastSessionId && !db.getLastSessionId()) {
       db.setLastSessionId(remote.lastSessionId);
     }
+    // The renderer already read the (then-empty) local api_keys table before this
+    // background pull landed — tell it to re-read now that the rows exist.
+    if (importedKeys) sendToRenderer('supabase-api-keys-synced');
   } catch (e) {
     console.warn('[supabase] merge skipped:', e.message);
   }

@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld('ghostAI', {
     setActiveApiKey: (id, provider) => ipcRenderer.invoke('db:set-active-api-key', id, provider),
     deleteApiKey: (id) => ipcRenderer.invoke('db:delete-api-key', id),
     updateKeyRateLimit: (provider, keyValue, limit, remaining) => ipcRenderer.invoke('db:update-key-ratelimit', provider, keyValue, limit, remaining),
+    onApiKeysSynced: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on('supabase-api-keys-synced', handler);
+      return () => ipcRenderer.removeListener('supabase-api-keys-synced', handler);
+    },
   },
   hotkeys: {
     getRegisteredHotkeys: () => ipcRenderer.invoke('hotkeys:get'),

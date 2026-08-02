@@ -674,6 +674,19 @@
       background: var(--text-dim); border-radius: 50%;
       box-shadow: 0 0 4px var(--overlay-18); cursor: pointer;
     }
+    /* Lives outside #app so it's unaffected by the panel-wide opacity fade —
+       a faint anchor dot marking the real (invisible) slider thumb once the
+       panel opacity is low enough that everything else has vanished. */
+    #opacity-anchor-dot {
+      position: fixed;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      opacity: 0;
+      z-index: 999;
+    }
 
     #input-area {
       padding: 6px 13px 13px;
@@ -857,7 +870,7 @@
   <!-- TITLEBAR -->
   <div id="titlebar">
     <div class="title-controls">
-      <input type="range" id="opacity-slider" min="20" max="95" value="82" title="Opacity" />
+      <input type="range" id="opacity-slider" min="0" max="95" value="82" title="Opacity" />
       <button class="ctrl-btn" id="new-chat-btn" title="New Chat" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 20h9"></path>
@@ -1111,6 +1124,7 @@
   </div>
 
 </div>
+<div id="opacity-anchor-dot"></div>
 <script>
 // ═══════════════════════════════════════════════
 //  CONFIG
@@ -2130,6 +2144,11 @@ clickThroughBtn.addEventListener('click', async () => {
 
 window.ghostAI.onClickThroughChanged(applyClickThroughState);
 
+// Local api_keys table can be empty at first paint on a fresh/production install —
+// the Supabase pull that fills it runs in the background and lands after this
+// script's initial loadApiKeys() call. Re-read once those rows actually exist.
+window.ghostAI.db.onApiKeysSynced(() => loadApiKeys());
+
 window.ghostAI.hotkeys.onEvent(hotkey => {
   switch (hotkey.action) {
     case 'focus-chat':
@@ -2279,11 +2298,27 @@ shortcutsBtn.addEventListener('click', () => {
 //  OPACITY — scales the whole panel (background, text, icons, everything)
 // ═══════════════════════════════════════════════
 const opacitySlider = $('opacity-slider');
+const opacityAnchorDot = $('opacity-anchor-dot');
+// The dot sits outside #app (unaffected by its opacity), so it can stay faintly
+// visible as a "here's the slider" marker even once the panel itself is at true 0.
+function updateOpacityAnchorDot(value) {
+  if (value <= 30) {
+    const rect = opacitySlider.getBoundingClientRect();
+    const pct = (value - Number(opacitySlider.min)) / (Number(opacitySlider.max) - Number(opacitySlider.min));
+    opacityAnchorDot.style.left = `${rect.left + pct * rect.width}px`;
+    opacityAnchorDot.style.top = `${rect.top + rect.height / 2}px`;
+    opacityAnchorDot.style.opacity = '0.3';
+  } else {
+    opacityAnchorDot.style.opacity = '0';
+  }
+}
 function applyOpacity(value) {
   $('app').style.opacity = value / 100;
+  updateOpacityAnchorDot(Number(value));
 }
 applyOpacity(opacitySlider.value);
 opacitySlider.addEventListener('input', e => applyOpacity(e.target.value));
+window.addEventListener('resize', () => updateOpacityAnchorDot(Number(opacitySlider.value)));
 
 // ═══════════════════════════════════════════════
 //  THEME — dark (default) / light, persisted across restarts
