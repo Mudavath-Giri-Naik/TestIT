@@ -1128,6 +1128,7 @@ const CFG = {
       { v: 'llama3-70b-8192',          l: 'Llama 3 70B · Stable' },
       { v: 'mixtral-8x7b-32768',       l: 'Mixtral 8x7B' },
       { v: 'gemma2-9b-it',             l: 'Gemma 2 9B' },
+      { v: 'qwen/qwen3.6-27b',         l: 'Qwen 3.6 27B · Supports images' },
     ],
   },
   anthropic: {
@@ -1398,6 +1399,7 @@ function getContextLimit(mdl) {
   if (m.includes('llama3-70b')) return 8192;
   if (m.includes('mixtral')) return 32768;
   if (m.includes('gemma2')) return 8192;
+  if (m.includes('qwen')) return 131072;
   if (m.includes('claude')) return 200000;
   if (m.includes('gemini')) return 1048576; // 1M
   if (m.includes('grok')) return 131072;

@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { net } = require('electron');
 
 // Publishable/anon key — safe to ship in the client. There is no login step:
 // every install of the app reads/writes the same shared tables directly
@@ -11,7 +12,15 @@ const SUPABASE_ANON_KEY = 'sb_publishable_z_h99gbkViDyBWl-hebX4A_92uQ_ikp';
 // auth.uid() to key it to, so every install shares this one fixed row.
 const GLOBAL_ROW_ID = '00000000-0000-0000-0000-000000000001';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Node's built-in fetch in the main process bypasses Chromium's network stack,
+// so it ignores system proxy/VPN routing and fails with a generic network
+// error on machines that need it (same root cause as the AI-provider "fetch
+// failed" bug fixed in v1.0.14). Electron's net.fetch goes through Chromium's
+// stack instead, so pass it in explicitly rather than relying on supabase-js's
+// default of globalThis.fetch.
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  global: { fetch: net.fetch.bind(net) },
+});
 
 // Every sync call in this module must be fail-soft: a network hiccup or a
 // misconfigured Supabase project should never break local chat, which is
