@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, screen, Menu, Tray, nativeImage, desktopCapturer, session } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, screen, Menu, Tray, nativeImage, desktopCapturer, session, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const db = require('./src/main/database');
@@ -581,7 +581,7 @@ ipcMain.handle('transcribe-audio', async (event, { apiKey, buffer, mimeType }) =
     form.append('response_format', 'json');
     form.append('temperature', '0');
 
-    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    const res = await net.fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}` },
       body: form,
@@ -658,7 +658,7 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
     }
     const body = { model, max_tokens: isTest ? 10 : 2048, messages: msgs };
     if (systemPrompt) body.system = systemPrompt;
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await net.fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify(body),
@@ -684,7 +684,7 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
   if (provider === 'groq') {
     const withImage = withImageOpenAIStyle(messages);
     const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...withImage] : withImage;
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const res = await net.fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({ model, messages: msgs, max_tokens: isTest ? 10 : 2048 }),
@@ -721,7 +721,7 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
     });
     const body = { contents };
     if (systemPrompt) body.systemInstruction = { parts: [{ text: systemPrompt }] };
-    const res = await fetch(
+    const res = await net.fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }
     );
@@ -746,7 +746,7 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
   if (provider === 'grok') {
     const withImage = withImageOpenAIStyle(messages);
     const msgs = systemPrompt ? [{ role: 'system', content: systemPrompt }, ...withImage] : withImage;
-    const res = await fetch('https://api.x.ai/v1/chat/completions', {
+    const res = await net.fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({ model, messages: msgs, max_tokens: isTest ? 10 : 2048 }),

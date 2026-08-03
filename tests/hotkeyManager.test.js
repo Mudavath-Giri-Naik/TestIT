@@ -77,7 +77,7 @@ test('prevents duplicate shortcut assignments', () => {
   const result = manager.registerHotkey({
     action: 'focus-chat',
     label: 'Duplicate',
-    accelerator: 'Ctrl+Shift+Space',
+    accelerator: 'Ctrl+Shift+I',
     enabled: true,
   });
 

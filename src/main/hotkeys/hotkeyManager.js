@@ -68,7 +68,7 @@ const DEFAULT_HOTKEYS = Object.freeze([
     id: 'focus-chat',
     action: 'focus-chat',
     label: 'Focus chat input',
-    accelerator: 'CommandOrControl+Shift+Space',
+    accelerator: 'CommandOrControl+Shift+I',
     enabled: true,
     locked: false,
   },
