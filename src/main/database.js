@@ -4,30 +4,6 @@ const { app } = require('electron');
 
 let db;
 
-// Default Gemini API keys shipped with the app itself — seeded once on first
-// run (before any Supabase pull happens) so they show up in Settings right
-// away. Supabase sync stays the secondary/backup source for keys added on
-// other devices.
-const DEFAULT_GEMINI_KEYS = [
-  'AIzaSyDWovnlPLq91M9bm0MFPUbIWDgR_B428m0',
-  'AIzaSyCPK4mu-gGPUxH-1qsIbfDS5JuBw2uICog',
-  'AIzaSyC3nc1cZ2KjabKs5VxJT2I_eUXniDXvxBc',
-  'AIzaSyA1D34Jv4M1ZqDpePWXx3K7UyzTs3Sr-MM',
-  'AIzaSyBTnQk_Ea44re3M3-ZpUMHqe-lXCIzQLbA',
-  'AIzaSyAqIsCbZQMjzhib0FG542DajwFg2RPowRU',
-  'AIzaSyA4bGwXkgoExtGPYTc4Ba2UrgxxHh__apA',
-];
-
-function seedDefaultApiKeys() {
-  const { c } = db.prepare('SELECT COUNT(*) AS c FROM api_keys').get();
-  if (c > 0) return;
-  const createdAt = Date.now();
-  DEFAULT_GEMINI_KEYS.forEach((key, i) => {
-    db.prepare('INSERT INTO api_keys (id, provider, label, key_value, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(`key_seed_${i}`, 'gemini', `Key ${i + 1}`, key, i === 0 ? 1 : 0, createdAt);
-  });
-}
-
 function init() {
   const dbPath = path.join(app.getPath('userData'), 'ghost_ai.db');
   db = new Database(dbPath);
@@ -103,8 +79,6 @@ function init() {
   if (!state) {
     db.prepare('INSERT INTO app_state (id, last_session_id) VALUES (1, NULL)').run();
   }
-
-  seedDefaultApiKeys();
 }
 
 function getSessions() {
