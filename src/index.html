@@ -178,26 +178,6 @@
       letter-spacing: 0.1em; text-transform: uppercase;
     }
 
-    /* provider dropdown */
-    .provider-select-wrap {
-      position: relative;
-    }
-    .provider-select-wrap::after {
-      content: '';
-      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-      width: 0; height: 0;
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
-      border-top: 5px solid var(--overlay-30);
-      pointer-events: none;
-    }
-    .provider-badge {
-      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--text-dim); pointer-events: none;
-      transition: background 0.3s;
-    }
-
     .gi {
       background: var(--glass-light);
       border: 1px solid var(--glass-border);
@@ -919,18 +899,23 @@
   <!-- SETUP PANEL -->
   <div id="setup-panel">
 
-    <!-- Provider dropdown -->
+    <!-- Provider cycle button — click to rotate through providers -->
     <div class="row">
       <div class="lbl">AI Provider</div>
-      <div class="provider-select-wrap">
-        <div class="provider-badge" id="provider-badge"></div>
-        <select class="gi" id="provider-select">
-          <option value="groq">⚡  Groq  (Free · Fast · gsk_...)</option>
-          <option value="anthropic">🤖  Anthropic Claude  (sk-ant-...)</option>
-          <option value="gemini">✦  Google Gemini  (AIzaSy...)</option>
-          <option value="grok">🌀  xAI Grok  (xai-...)</option>
-        </select>
-      </div>
+      <button type="button" class="gi model-cycle-btn" id="provider-cycle-btn" title="Click to switch AI provider">
+        <svg class="model-cycle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        <span id="provider-cycle-label"></span>
+      </button>
+      <select class="gi" id="provider-select" style="display:none">
+        <option value="groq">⚡  Groq  (Free · Fast · gsk_...)</option>
+        <option value="anthropic">🤖  Anthropic Claude  (sk-ant-...)</option>
+        <option value="gemini">✦  Google Gemini  (AIzaSy...)</option>
+        <option value="grok">🌀  xAI Grok  (xai-...)</option>
+      </select>
     </div>
 
     <!-- Model cycle button — click to rotate through this provider's models -->
@@ -1182,7 +1167,7 @@ const CFG = {
 // ═══════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════
-let provider = localStorage.getItem('ghost_provider') || 'groq';
+let provider = localStorage.getItem('ghost_provider') || 'gemini';
 let apiKey = '', model = '', systemPrompt = '';
 let history = [], isTyping = false, tokens = 0;
 let pendingImages = []; // screenshots staged for the next send, not sent yet
@@ -1204,6 +1189,8 @@ try {
 // ═══════════════════════════════════════════════
 const $ = id => document.getElementById(id);
 const providerSelect = $('provider-select');
+const providerCycleBtn = $('provider-cycle-btn');
+const providerCycleLabel = $('provider-cycle-label');
 const modelSelect    = $('model-select');
 const modelCycleBtn  = $('model-cycle-btn');
 const modelCycleLabel = $('model-cycle-label');
@@ -1245,7 +1232,6 @@ const tokenEl        = $('token-count');
 const attachmentStrip = $('attachment-strip');
 const presetStrip     = $('preset-strip');
 const pillText       = $('pill-text');
-const badge          = $('provider-badge');
 const clickThroughBtn = $('click-through-btn');
 const hotkeyList     = $('hotkey-list');
 const addHotkeyBtn   = $('add-hotkey-btn');
@@ -1305,6 +1291,7 @@ function shouldAutoStart() {
 // ═══════════════════════════════════════════════
 async function applyProvider(p) {
   provider = p;
+  syncProviderLabel();
   const c = CFG[p];
   document.documentElement.style.setProperty('--accent', c.accent);
   document.documentElement.style.setProperty('--accent2', c.accent2);
@@ -1344,6 +1331,21 @@ modelSelect.addEventListener('change', () => {
   syncModelLabel();
   saveActiveSettings();
   markSettingsDirty();
+});
+
+function syncProviderLabel() {
+  const opt = providerSelect.options[providerSelect.selectedIndex];
+  if (providerCycleLabel) providerCycleLabel.textContent = opt ? opt.textContent : 'No provider selected';
+}
+
+providerCycleBtn.addEventListener('click', () => {
+  const n = providerSelect.options.length;
+  if (!n) return;
+  providerSelect.selectedIndex = (providerSelect.selectedIndex + 1) % n;
+  providerSelect.dispatchEvent(new Event('change'));
+  providerCycleBtn.classList.remove('spin');
+  void providerCycleBtn.offsetWidth;
+  providerCycleBtn.classList.add('spin');
 });
 
 function syncModelLabel() {
