@@ -4,7 +4,7 @@ A transparent, always-on-top AI chat window that is **invisible to screen record
 
 Built with Electron + Anthropic Claude API.
 
-Version 1.0.17.
+Version 1.0.18.
 
 ---
 

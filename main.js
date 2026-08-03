@@ -94,9 +94,22 @@ function mergeRemote(remote) {
     db.updateCoreMemory(remote.memory.core_memory);
   }
   const localKeyIds = new Set(db.getAllApiKeys().map(k => k.id));
+  // Tracks, per provider, whether an active key already exists locally — computed
+  // lazily and updated as rows are imported, so a batch pull can never leave two
+  // rows marked active for the same provider (local's existing active choice
+  // always wins; only fills the active slot if it was empty to begin with).
+  const hasActiveLocally = {};
   let importedKeys = 0;
   for (const k of remote.apiKeys) {
-    if (!localKeyIds.has(k.id)) { db.importApiKey(k); importedKeys++; }
+    if (!localKeyIds.has(k.id)) {
+      if (!(k.provider in hasActiveLocally)) {
+        hasActiveLocally[k.provider] = !!db.getActiveApiKey(k.provider);
+      }
+      const makeActive = !!k.is_active && !hasActiveLocally[k.provider];
+      db.importApiKey({ ...k, is_active: makeActive });
+      if (makeActive) hasActiveLocally[k.provider] = true;
+      importedKeys++;
+    }
   }
   if (remote.lastSessionId && !db.getLastSessionId()) {
     db.setLastSessionId(remote.lastSessionId);

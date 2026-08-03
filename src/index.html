@@ -1958,7 +1958,10 @@ async function runValidation() {
   const formatOk = (() => {
     if (p === 'groq')      return key.startsWith('gsk_');
     if (p === 'anthropic') return key.startsWith('sk-ant') || key.startsWith('sk-');
-    if (p === 'gemini')    return key.startsWith('AIza') && key.length > 20;
+    // Google is mid-migration between the old "AIza..." key format and a newer
+    // one (e.g. "AQ...."), so don't hard-match a prefix here — the real check
+    // is the actual API call in the next step. Just guard against empty/junk input.
+    if (p === 'gemini')    return key.length > 20;
     if (p === 'grok')      return key.startsWith('xai-');
     return true;
   })();
