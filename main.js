@@ -73,40 +73,46 @@ function sendToRenderer(channel, payload) {
   mainWindow.webContents.send(channel, payload);
 }
 
+// Merges a pulled remote snapshot into the local db. Local rows are never
+// overwritten — this only ever fills gaps. Returns how many new API keys
+// were imported, so callers can decide whether to notify the renderer.
+function mergeRemote(remote) {
+  const localSessionIds = new Set(db.getSessions().map(s => s.id));
+  const newSessionIds = new Set();
+  for (const s of remote.sessions) {
+    if (!localSessionIds.has(s.id)) {
+      db.importSession(s);
+      newSessionIds.add(s.id);
+    }
+  }
+  for (const m of remote.messages) {
+    if (newSessionIds.has(m.session_id)) {
+      db.importMessage(m.session_id, m.role, m.content, m.created_at);
+    }
+  }
+  if (remote.memory && remote.memory.core_memory && !db.getCoreMemory()) {
+    db.updateCoreMemory(remote.memory.core_memory);
+  }
+  const localKeyIds = new Set(db.getAllApiKeys().map(k => k.id));
+  let importedKeys = 0;
+  for (const k of remote.apiKeys) {
+    if (!localKeyIds.has(k.id)) { db.importApiKey(k); importedKeys++; }
+  }
+  if (remote.lastSessionId && !db.getLastSessionId()) {
+    db.setLastSessionId(remote.lastSessionId);
+  }
+  return importedKeys;
+}
+
 // Pulls anything that exists in the shared cloud store but not on this machine
 // (e.g. sessions or API keys added on another install — there is no login step,
-// every install reads/writes the same shared tables). Local rows are never
-// overwritten — this only ever fills gaps. Fully fail-soft: any error here
-// just means the app stays local-only, nothing else is affected.
+// every install reads/writes the same shared tables). Fully fail-soft: any
+// error here just means the app stays local-only, nothing else is affected.
 async function syncWithSupabase() {
   try {
     const remote = await supabaseSync.pullAll();
     if (!remote) return;
-
-    const localSessionIds = new Set(db.getSessions().map(s => s.id));
-    const newSessionIds = new Set();
-    for (const s of remote.sessions) {
-      if (!localSessionIds.has(s.id)) {
-        db.importSession(s);
-        newSessionIds.add(s.id);
-      }
-    }
-    for (const m of remote.messages) {
-      if (newSessionIds.has(m.session_id)) {
-        db.importMessage(m.session_id, m.role, m.content, m.created_at);
-      }
-    }
-    if (remote.memory && remote.memory.core_memory && !db.getCoreMemory()) {
-      db.updateCoreMemory(remote.memory.core_memory);
-    }
-    const localKeyIds = new Set(db.getAllApiKeys().map(k => k.id));
-    let importedKeys = false;
-    for (const k of remote.apiKeys) {
-      if (!localKeyIds.has(k.id)) { db.importApiKey(k); importedKeys = true; }
-    }
-    if (remote.lastSessionId && !db.getLastSessionId()) {
-      db.setLastSessionId(remote.lastSessionId);
-    }
+    const importedKeys = mergeRemote(remote);
     // The renderer already read the (then-empty) local api_keys table before this
     // background pull landed — tell it to re-read now that the rows exist.
     if (importedKeys) sendToRenderer('supabase-api-keys-synced');
@@ -505,6 +511,18 @@ ipcMain.handle('db:update-key-ratelimit', (event, provider, keyValue, limit, rem
     if (row) supabaseSync.pushApiKey(row);
     return { success: true };
   } catch (e) { return { success: false, error: e.message }; }
+});
+// User-initiated pull from the shared cloud store (Settings "Refresh" button).
+// Unlike the silent background sync on launch, this surfaces the real error
+// (e.g. a misconfigured/unreachable Supabase project) instead of swallowing it.
+ipcMain.handle('db:refresh-api-keys', async () => {
+  try {
+    const remote = await supabaseSync.pullAllOrThrow();
+    const importedKeys = mergeRemote(remote);
+    return { success: true, importedKeys };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 // ── VALIDATE API KEY (test call) ──

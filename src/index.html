@@ -979,7 +979,10 @@
           <div class="lbl">Saved Keys</div>
           <div class="key-help">Store more than one key for this provider and switch which is active.</div>
         </div>
-        <button type="button" class="mini-btn primary" id="add-apikey-btn">+ Add</button>
+        <div class="hotkey-actions">
+          <button type="button" class="mini-btn" id="refresh-apikey-btn" title="Fetch keys saved from other devices">⟳ Refresh</button>
+          <button type="button" class="mini-btn primary" id="add-apikey-btn">+ Add</button>
+        </div>
       </div>
       <div class="hotkey-list" id="apikey-list"></div>
       <div class="hotkey-msg" id="apikey-msg"></div>
@@ -1249,6 +1252,7 @@ const addHotkeyBtn   = $('add-hotkey-btn');
 const hotkeyGlobalMsg = $('hotkey-global-msg');
 const apikeyList     = $('apikey-list');
 const addApikeyBtn   = $('add-apikey-btn');
+const refreshApikeyBtn = $('refresh-apikey-btn');
 const apikeyMsg      = $('apikey-msg');
 
 let hotkeys = [];
@@ -1876,6 +1880,29 @@ function createApiKeyDraftRow() {
 addApikeyBtn.addEventListener('click', () => {
   apikeyDraftOpen = true;
   renderApiKeys();
+});
+
+refreshApikeyBtn.addEventListener('click', async () => {
+  refreshApikeyBtn.disabled = true;
+  const prevLabel = refreshApikeyBtn.textContent;
+  refreshApikeyBtn.textContent = 'Syncing...';
+  try {
+    const result = await window.ghostAI.db.refreshApiKeys();
+    if (result && result.success) {
+      await loadApiKeys();
+      showApikeyMessage(
+        result.importedKeys > 0 ? `Synced ${result.importedKeys} key(s) from other devices ✓` : 'Already up to date — no new keys found.',
+        'ok'
+      );
+    } else {
+      showApikeyMessage(`Sync failed: ${result?.error || 'Unknown error'}`, 'error');
+    }
+  } catch (e) {
+    showApikeyMessage(`Sync failed: ${e.message}`, 'error');
+  } finally {
+    refreshApikeyBtn.disabled = false;
+    refreshApikeyBtn.textContent = prevLabel;
+  }
 });
 
 // ═══════════════════════════════════════════════

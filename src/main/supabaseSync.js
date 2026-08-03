@@ -16,9 +16,17 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Every sync call in this module must be fail-soft: a network hiccup or a
 // misconfigured Supabase project should never break local chat, which is
 // the source of truth. Callers don't need try/catch of their own.
+//
+// Supabase-js query results resolve to `{ data, error }` — they do NOT
+// reject/throw on a query-level failure (RLS block, missing table, bad
+// column, etc). Without checking `.error` here, a misconfigured project
+// would silently look like "no rows" instead of surfacing the real reason,
+// which is exactly what made cross-device key sync fail silently before.
 async function withFallback(fn, fallback) {
   try {
-    return await fn();
+    const result = await fn();
+    if (result && result.error) throw new Error(result.error.message || 'Supabase request failed');
+    return result;
   } catch (e) {
     console.warn('[supabase]', e.message);
     return fallback;
@@ -66,25 +74,40 @@ async function pushLastSession(sessionId) {
   await withFallback(() => supabase.from('app_state').upsert({ user_id: GLOBAL_ROW_ID, last_session_id: sessionId }));
 }
 
-// Pulls everything from Supabase for a first-run / cross-device merge.
-// Returns null (never throws) if unreachable.
+// Raw pull of everything from Supabase — throws on any query failure
+// (RLS block, missing table, bad column, network error) instead of
+// hiding it, so callers that want to know *why* a sync failed can.
+async function fetchAllRemote() {
+  const [sessions, messages, memory, apiKeys, appState] = await Promise.all([
+    supabase.from('sessions').select('*'),
+    supabase.from('messages').select('*'),
+    supabase.from('memory').select('*').eq('id', 1).maybeSingle(),
+    supabase.from('api_keys').select('*'),
+    supabase.from('app_state').select('*').eq('user_id', GLOBAL_ROW_ID).maybeSingle(),
+  ]);
+  // Each query resolves with its own { data, error } — a failure on any one
+  // of them (e.g. RLS blocking api_keys) must not be silently read as "empty".
+  const failed = [sessions, messages, memory, apiKeys, appState].find(r => r.error);
+  if (failed) throw new Error(failed.error.message || 'Supabase pull failed');
+  return {
+    sessions: sessions.data || [],
+    messages: messages.data || [],
+    memory: memory.data || null,
+    apiKeys: apiKeys.data || [],
+    lastSessionId: appState.data?.last_session_id || null,
+  };
+}
+
+// Fail-soft variant for the silent background sync on app launch.
+// Returns null (never throws) if unreachable/misconfigured.
 async function pullAll() {
-  return withFallback(async () => {
-    const [sessions, messages, memory, apiKeys, appState] = await Promise.all([
-      supabase.from('sessions').select('*'),
-      supabase.from('messages').select('*'),
-      supabase.from('memory').select('*').eq('id', 1).maybeSingle(),
-      supabase.from('api_keys').select('*'),
-      supabase.from('app_state').select('*').eq('user_id', GLOBAL_ROW_ID).maybeSingle(),
-    ]);
-    return {
-      sessions: sessions.data || [],
-      messages: messages.data || [],
-      memory: memory.data || null,
-      apiKeys: apiKeys.data || [],
-      lastSessionId: appState.data?.last_session_id || null,
-    };
-  }, null);
+  return withFallback(fetchAllRemote, null);
+}
+
+// Throwing variant for a user-initiated "Refresh" — the caller wants to
+// know the real reason a sync came back empty, not just get null.
+async function pullAllOrThrow() {
+  return fetchAllRemote();
 }
 
 module.exports = {
@@ -97,4 +120,5 @@ module.exports = {
   pushDeleteApiKey,
   pushLastSession,
   pullAll,
+  pullAllOrThrow,
 };

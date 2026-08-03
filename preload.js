@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('ghostAI', {
     setActiveApiKey: (id, provider) => ipcRenderer.invoke('db:set-active-api-key', id, provider),
     deleteApiKey: (id) => ipcRenderer.invoke('db:delete-api-key', id),
     updateKeyRateLimit: (provider, keyValue, limit, remaining) => ipcRenderer.invoke('db:update-key-ratelimit', provider, keyValue, limit, remaining),
+    refreshApiKeys: () => ipcRenderer.invoke('db:refresh-api-keys'),
     onApiKeysSynced: (callback) => {
       const handler = () => callback();
       ipcRenderer.on('supabase-api-keys-synced', handler);
