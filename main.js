@@ -4,7 +4,9 @@ const path = require('path');
 const db = require('./src/main/database');
 const supabaseSync = require('./src/main/supabaseSync');
 const { JsonSettingsStore } = require('./src/main/hotkeys/settingsStore');
-const { HOTKEY_ACTIONS, HotkeyManager } = require('./src/main/hotkeys/hotkeyManager');
+const { HOTKEY_ACTIONS, HotkeyManager, isLetterChord } = require('./src/main/hotkeys/hotkeyManager');
+const { createLetterChordBackend } = require('./src/main/hotkeys/windowsLetterChords');
+const windowFocus = require('./src/main/windowFocus');
 
 const APP_NAME = 'Ghost AI';
 const APP_ID = 'com.ghost.ai';
@@ -30,10 +32,18 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 app.commandLine.appendSwitch('disk-cache-size', '0');
 
 let mainWindow;
+let restoreBubble;
 let tray;
 let clickThrough = false;
 let hotkeyManager;
+let letterChords;
 let isQuitting = false;
+// Type Mode: the window normally never takes keyboard focus. While Type Mode is
+// on it becomes a normal focused window you can type into; turning it off hands
+// focus back to the app you were in (typeModeReturnTo).
+let typeMode = false;
+let typeModeReturnTo = null;
+let typeModeSwitching = false;
 
 function setClickThrough(enabled) {
   if (!mainWindow) return;
@@ -66,6 +76,47 @@ function hideWindow() {
 function showWindow() {
   if (!mainWindow) return;
   if (!mainWindow.isVisible()) mainWindow.showInactive();
+}
+
+function setTypeMode(enabled, { restoreFocus = true } = {}) {
+  if (!mainWindow || mainWindow.isDestroyed() || enabled === typeMode) return typeMode;
+  typeModeSwitching = true;
+  try {
+    if (enabled) {
+      if (!mainWindow.isVisible()) mainWindow.showInactive();
+      const previous = windowFocus.getForegroundWindow();
+      typeModeReturnTo = previous && !windowFocus.sameHwnd(previous, windowFocus.hwndOf(mainWindow)) ? previous : null;
+      mainWindow.setFocusable(true);
+      // setFocusable(true) also re-adds a taskbar button on Windows; keep it hidden.
+      mainWindow.setSkipTaskbar(true);
+      if (windowFocus.forceForeground(mainWindow)) {
+        typeMode = true;
+      } else {
+        console.warn('[type-mode] Windows refused to give the window keyboard focus.');
+        mainWindow.setFocusable(false);
+        mainWindow.setSkipTaskbar(true);
+        if (typeModeReturnTo) windowFocus.restoreForeground(typeModeReturnTo);
+        typeModeReturnTo = null;
+      }
+    } else {
+      typeMode = false;
+      // setFocusable(false) deactivates the window, which pushes focus to the next
+      // window in z-order (usually the taskbar) — even when another app is already
+      // in front. So note who is in front first, then put focus where it belongs:
+      // the app the user came from, or the app they just clicked into.
+      const inFront = windowFocus.getForegroundWindow();
+      const userPicked = inFront && !windowFocus.sameHwnd(inFront, windowFocus.hwndOf(mainWindow)) ? inFront : null;
+      mainWindow.setFocusable(false);
+      mainWindow.setSkipTaskbar(true);
+      const target = restoreFocus ? typeModeReturnTo : userPicked;
+      if (target) windowFocus.restoreForeground(target);
+      typeModeReturnTo = null;
+    }
+  } finally {
+    typeModeSwitching = false;
+  }
+  sendToRenderer('type-mode-changed', typeMode);
+  return typeMode;
 }
 
 function sendToRenderer(channel, payload) {
@@ -137,7 +188,18 @@ async function syncWithSupabase() {
 function createHotkeyManager() {
   const settingsPath = path.join(app.getPath('userData'), 'hotkeys.json');
   const store = new JsonSettingsStore({ filePath: settingsPath });
-  hotkeyManager = new HotkeyManager({ globalShortcut, store });
+  // Letter chords ("J+T") go through our own keyboard hook; anything with a
+  // modifier still goes through Electron's globalShortcut.
+  letterChords = createLetterChordBackend();
+  const shortcuts = {
+    register: (accelerator, callback) => (isLetterChord(accelerator)
+      ? Boolean(letterChords && letterChords.register(accelerator, callback))
+      : globalShortcut.register(accelerator, callback)),
+    unregister: (accelerator) => (isLetterChord(accelerator)
+      ? letterChords && letterChords.unregister(accelerator)
+      : globalShortcut.unregister(accelerator)),
+  };
+  hotkeyManager = new HotkeyManager({ globalShortcut: shortcuts, store });
 
   hotkeyManager.on('hotkey:pressed', (hotkey) => {
     console.log(`[hotkeys] ${hotkey.accelerator} -> ${hotkey.action}`);
@@ -266,6 +328,9 @@ function handleHotkeyAction(hotkey) {
     case 'toggle-click-through':
       setClickThrough(!clickThrough);
       break;
+    case 'toggle-type-mode':
+      setTypeMode(!typeMode);
+      break;
     case 'quit-app':
       isQuitting = true;
       app.quit();
@@ -320,9 +385,26 @@ function createWindow() {
   mainWindow.showInactive();
   mainWindow.loadFile('src/index.html');
 
-  mainWindow.on('show', updateTrayMenu);
+  mainWindow.on('show', () => {
+    updateTrayMenu();
+    if (restoreBubble && !restoreBubble.isDestroyed()) restoreBubble.hide();
+  });
   mainWindow.on('hide', () => {
     updateTrayMenu();
+    showRestoreBubble();
+  });
+
+  // Clicking into another app ends Type Mode (focus already went where the user
+  // wanted it). If the window was hidden instead, focus is handed back explicitly.
+  // Windows can emit a transient blur while focus is being handed over, so the
+  // OS foreground window is re-checked shortly after before acting on it.
+  mainWindow.on('blur', () => {
+    if (!typeMode || typeModeSwitching) return;
+    setTimeout(() => {
+      if (!typeMode || typeModeSwitching || mainWindow.isDestroyed()) return;
+      if (!mainWindow.isVisible()) setTypeMode(false);
+      else if (!windowFocus.isForeground(mainWindow)) setTypeMode(false, { restoreFocus: false });
+    }, 120);
   });
 
   mainWindow.on('close', (event) => {
@@ -332,6 +414,48 @@ function createWindow() {
   });
 
   if (process.platform === 'darwin') app.dock.hide();
+}
+
+// A small ghost button parked where the window's top-right corner was, shown
+// only while the main window is hidden — one click brings the window back.
+function showRestoreBubble() {
+  if (isQuitting || !mainWindow || mainWindow.isDestroyed()) return;
+  const size = 40;
+  const bounds = mainWindow.getBounds();
+  const x = bounds.x + bounds.width - size - 8;
+  const y = bounds.y + 8;
+
+  if (!restoreBubble || restoreBubble.isDestroyed()) {
+    restoreBubble = new BrowserWindow({
+      width: size,
+      height: size,
+      x,
+      y,
+      show: false,
+      transparent: true,
+      frame: false,
+      backgroundColor: '#00000000',
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: false,
+      focusable: false,
+      acceptFirstMouse: true,
+      hasShadow: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+      },
+    });
+    restoreBubble.setContentProtection(true);
+    restoreBubble.setAlwaysOnTop(true, 'screen-saver', 1);
+    restoreBubble.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    restoreBubble.loadFile('src/restore.html');
+  } else {
+    restoreBubble.setPosition(x, y);
+  }
+  restoreBubble.showInactive();
 }
 
 app.whenReady().then(() => {
@@ -377,6 +501,7 @@ app.on('before-quit', () => {
 });
 app.on('will-quit', () => {
   if (hotkeyManager) hotkeyManager.shutdown();
+  if (letterChords) letterChords.unregisterAll();
   globalShortcut.unregisterAll();
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
@@ -397,6 +522,9 @@ ipcMain.on('window-close', () => {
   app.quit();
 });
 ipcMain.on('window-minimize', () => mainWindow.hide());
+ipcMain.on('window-show', showWindow);
+ipcMain.handle('type-mode:toggle', () => setTypeMode(!typeMode));
+ipcMain.on('window-toggle', toggleWindowVisibility);
 ipcMain.handle('set-click-through', (event, enabled) => {
   setClickThrough(Boolean(enabled));
   return clickThrough;
@@ -565,6 +693,12 @@ ipcMain.handle('hotkeys:unregister', (event, id) => {
 ipcMain.handle('hotkeys:validate', (event, accelerator, excludeId) => {
   if (!hotkeyManager) return { success: false, error: 'Hotkey manager is not ready.' };
   return hotkeyManager.validateAccelerator(accelerator, excludeId);
+});
+
+// While Settings records a new shortcut, letter chords must reach the page
+// as plain keystrokes instead of firing their actions.
+ipcMain.on('hotkeys:set-capturing', (event, capturing) => {
+  if (letterChords) letterChords.setPaused(capturing);
 });
 
 ipcMain.handle('validate-key', async (event, { provider, apiKey, model }) => {

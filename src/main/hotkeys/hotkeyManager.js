@@ -1,7 +1,10 @@
 const { EventEmitter } = require('events');
 const os = require('os');
+const { isLetterChord } = require('./letterChords');
 
-const HOTKEY_SCHEMA_VERSION = 1;
+// v2: built-in hotkeys moved from Ctrl+Shift+<key> to modifier-free letter chords.
+// v3: screenshot moved to J+S and quit to J+Q.
+const HOTKEY_SCHEMA_VERSION = 3;
 
 const HOTKEY_ACTIONS = Object.freeze({
   'toggle-window': 'Toggle Window',
@@ -13,6 +16,7 @@ const HOTKEY_ACTIONS = Object.freeze({
   'focus-chat': 'Focus Chat Input',
   'open-settings': 'Open Settings',
   'new-chat': 'New Chat',
+  'toggle-type-mode': 'Toggle Type Mode',
 });
 
 const DEFAULT_HOTKEYS = Object.freeze([
@@ -20,7 +24,7 @@ const DEFAULT_HOTKEYS = Object.freeze([
     id: 'toggle-window',
     action: 'toggle-window',
     label: 'Toggle window',
-    accelerator: 'CommandOrControl+Shift+T',
+    accelerator: 'J+T',
     enabled: true,
     locked: true,
   },
@@ -28,7 +32,7 @@ const DEFAULT_HOTKEYS = Object.freeze([
     id: 'screenshot-ask',
     action: 'screenshot-ask',
     label: 'Screenshot & ask AI',
-    accelerator: 'CommandOrControl+Shift+S',
+    accelerator: 'J+S',
     enabled: true,
     locked: true,
   },
@@ -36,7 +40,7 @@ const DEFAULT_HOTKEYS = Object.freeze([
     id: 'hide-window',
     action: 'hide-window',
     label: 'Hide window',
-    accelerator: 'CommandOrControl+Shift+Z',
+    accelerator: 'J+H',
     enabled: true,
     locked: true,
   },
@@ -44,7 +48,7 @@ const DEFAULT_HOTKEYS = Object.freeze([
     id: 'show-window',
     action: 'show-window',
     label: 'Show window (restore)',
-    accelerator: 'CommandOrControl+Shift+O',
+    accelerator: 'J+B',
     enabled: true,
     locked: true,
   },
@@ -52,7 +56,7 @@ const DEFAULT_HOTKEYS = Object.freeze([
     id: 'toggle-click-through',
     action: 'toggle-click-through',
     label: 'Toggle click-through',
-    accelerator: 'CommandOrControl+Shift+X',
+    accelerator: 'J+X',
     enabled: true,
     locked: true,
   },
@@ -60,7 +64,7 @@ const DEFAULT_HOTKEYS = Object.freeze([
     id: 'quit-app',
     action: 'quit-app',
     label: 'Quit app',
-    accelerator: 'CommandOrControl+Shift+Q',
+    accelerator: 'J+Q',
     enabled: true,
     locked: true,
   },
@@ -68,9 +72,17 @@ const DEFAULT_HOTKEYS = Object.freeze([
     id: 'focus-chat',
     action: 'focus-chat',
     label: 'Focus chat input',
-    accelerator: 'CommandOrControl+Shift+I',
+    accelerator: 'J+F',
     enabled: true,
     locked: false,
+  },
+  {
+    id: 'toggle-type-mode',
+    action: 'toggle-type-mode',
+    label: 'Type Mode (focus window / give focus back)',
+    accelerator: 'J+K',
+    enabled: true,
+    locked: true,
   },
 ]);
 
@@ -146,7 +158,7 @@ class HotkeyManager extends EventEmitter {
 
   initialize() {
     const loaded = this.store.load();
-    const hotkeys = this.mergeWithDefaults(loaded?.hotkeys);
+    const hotkeys = this.mergeWithDefaults(this.migrate(loaded));
     this.hotkeys = new Map(hotkeys.map((hotkey) => [hotkey.id, this.toRuntimeConfig(hotkey)]));
     this.registerEnabledHotkeys();
     this.persist();
@@ -299,6 +311,15 @@ class HotkeyManager extends EventEmitter {
     ));
   }
 
+  // Settings saved before the current version hold older defaults (and may have
+  // them disabled after a failed registration), so built-ins restart from the
+  // new letter-chord defaults. Custom hotkeys are kept as they are.
+  migrate(loaded) {
+    const saved = Array.isArray(loaded?.hotkeys) ? loaded.hotkeys : [];
+    if (loaded && loaded.version >= HOTKEY_SCHEMA_VERSION) return saved;
+    return saved.filter((hotkey) => !this.defaults.some((defaultHotkey) => defaultHotkey.id === hotkey.id));
+  }
+
   mergeWithDefaults(savedHotkeys) {
     const saved = Array.isArray(savedHotkeys) ? savedHotkeys : [];
     const byId = new Map(saved.map((hotkey) => [hotkey.id, hotkey]));
@@ -355,7 +376,7 @@ class HotkeyManager extends EventEmitter {
 
 function normalizeAccelerator(accelerator) {
   if (typeof accelerator !== 'string' || !accelerator.trim()) {
-    return { success: false, error: 'Enter a shortcut such as Ctrl+Shift+K.' };
+    return { success: false, error: 'Enter a shortcut such as J+T.' };
   }
 
   const rawParts = accelerator
@@ -364,7 +385,7 @@ function normalizeAccelerator(accelerator) {
     .split('+')
     .filter(Boolean);
   const modifiers = new Set();
-  let key = null;
+  const keys = [];
 
   for (const rawPart of rawParts) {
     const part = rawPart.trim();
@@ -375,14 +396,23 @@ function normalizeAccelerator(accelerator) {
       modifiers.add(modifier);
       continue;
     }
-
-    if (key) return { success: false, error: 'Shortcuts can contain only one non-modifier key.' };
-    key = normalizeKey(part);
+    keys.push(normalizeKey(part));
   }
 
+  // Two letters and nothing else is a letter chord: hold the first, tap the second.
+  if (keys.length === 2 && modifiers.size === 0) {
+    const chord = keys.join('+');
+    if (!isLetterChord(chord)) {
+      return { success: false, error: 'A letter chord needs two different letters, such as J+T.' };
+    }
+    return { success: true, accelerator: chord };
+  }
+
+  if (keys.length > 1) return { success: false, error: 'Shortcuts can contain only one non-modifier key.' };
+  const key = keys[0];
   if (!key) return { success: false, error: 'Add a regular key after the modifier keys.' };
   if (modifiers.size === 0 && !/^F([1-9]|1[0-9]|2[0-4])$/.test(key)) {
-    return { success: false, error: 'Global shortcuts need at least one modifier key.' };
+    return { success: false, error: 'Use a letter chord such as J+T, or add a modifier key.' };
   }
 
   return {
@@ -413,4 +443,5 @@ module.exports = {
   HotkeyManager,
   normalizeAccelerator,
   acceleratorIdentity,
+  isLetterChord,
 };

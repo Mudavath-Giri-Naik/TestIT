@@ -1,6 +1,6 @@
 {
   "name": "ghost-ai",
-  "version": "1.0.18",
+  "version": "1.2.0",
   "productName": "Ghost AI",
   "description": "Transparent always-on-top AI chat assistant.",
   "main": "main.js",
@@ -44,6 +44,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
-    "better-sqlite3": "^12.11.1"
+    "better-sqlite3": "^12.11.1",
+    "koffi": "^3.3.1"
   }
 }

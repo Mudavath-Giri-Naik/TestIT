@@ -139,14 +139,14 @@
     #titlebar {
       -webkit-app-region: drag;
       display: flex; align-items: center; justify-content: flex-end;
-      padding: 11px 14px 10px;
+      padding: 11px 10px 10px;
       border-bottom: 1px solid var(--glass-border);
       flex-shrink: 0; user-select: none;
     }
 
-    .title-controls { display: flex; gap: 5px; -webkit-app-region: no-drag; align-items: center; }
+    .title-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; -webkit-app-region: no-drag; align-items: center; }
     .ctrl-btn {
-      width: 26px; height: 26px; border-radius: 7px;
+      width: 24px; height: 24px; border-radius: 7px;
       border: 1px solid var(--glass-border); background: var(--glass-light);
       color: var(--text-dim); font-size: 11px; cursor: pointer;
       display: flex; align-items: center; justify-content: center; transition: all 0.15s;
@@ -157,8 +157,9 @@
       border-color: var(--overlay-18);
       background: var(--overlay-08);
     }
+    #app.type-mode { border-color: var(--success); }
     .ctrl-btn.close-btn:hover { color: var(--danger); border-color: rgba(255,107,107,0.35); }
-    .ctrl-btn svg { width: 14px; height: 14px; }
+    .ctrl-btn svg { width: 13px; height: 13px; }
 
     #theme-toggle-btn .icon-moon { display: none; }
     :root[data-theme="light"] #theme-toggle-btn .icon-sun { display: none; }
@@ -643,7 +644,7 @@
     }
     .tok { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-dim); white-space: nowrap; }
     #opacity-slider {
-      width: 70px; height: 3px; -webkit-appearance: none;
+      width: 60px; height: 3px; -webkit-appearance: none;
       appearance: none;
       background: var(--overlay-1); border-radius: 2px; cursor: pointer;
       margin-right: 8px;
@@ -884,6 +885,23 @@
           <path d="M12 14.5l4.5 5"></path>
         </svg>
       </button>
+      <button class="ctrl-btn" id="screenshot-btn" title="Screenshot &amp; ask AI">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+          <circle cx="12" cy="13" r="3.5"></circle>
+        </svg>
+      </button>
+      <button class="ctrl-btn" id="type-mode-btn" title="Type Mode off">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"></path>
+          <path d="M8 12h8M12 9v6"></path>
+        </svg>
+      </button>
+      <button class="ctrl-btn" id="focus-chat-btn" title="Focus chat input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 4h6M9 20h6M12 4v16"></path>
+        </svg>
+      </button>
       <button class="ctrl-btn" id="shortcuts-btn" title="Keyboard shortcuts">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="5" width="20" height="14" rx="2"></rect>
@@ -891,8 +909,14 @@
         </svg>
       </button>
       <button class="ctrl-btn" id="settings-btn" title="Settings">⚙</button>
-      <button class="ctrl-btn" id="minimize-btn">─</button>
-      <button class="ctrl-btn close-btn" id="close-btn">✕</button>
+      <button class="ctrl-btn" id="minimize-btn" title="Hide window">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 8 10 8a17.6 17.6 0 0 1-2.2 3.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 8 10 8a9.7 9.7 0 0 0 5.4-1.6"></path>
+          <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+          <path d="M2 2l20 20"></path>
+        </svg>
+      </button>
+      <button class="ctrl-btn close-btn" id="close-btn" title="Quit Ghost AI">✕</button>
     </div>
   </div>
 
@@ -1491,6 +1515,7 @@ async function loadHotkeys() {
   hotkeys = result.data || [];
   hotkeyActions = result.actions || {};
   renderHotkeys();
+  updateTitlebarTooltips();
 }
 
 function renderHotkeys() {
@@ -1531,7 +1556,7 @@ function createHotkeyRow(hotkey) {
   const capture = document.createElement('input');
   capture.className = 'gi hotkey-capture';
   capture.value = hotkey.accelerator || '';
-  capture.placeholder = 'Click, then press shortcut';
+  capture.placeholder = 'Click, then hold a letter and tap another';
   capture.readOnly = true;
   capture.spellcheck = false;
 
@@ -1565,18 +1590,42 @@ function createHotkeyRow(hotkey) {
   main.append(titleRow, controls, msg, buttons);
   row.append(enabled, main);
 
+  // Letters currently held down while recording, in the order they were pressed.
+  let heldLetters = [];
   capture.addEventListener('focus', () => {
+    heldLetters = [];
+    window.ghostAI.hotkeys.setCapturing(true);
     capture.classList.add('recording');
     msg.className = 'hotkey-msg';
-    msg.textContent = 'Press the shortcut keys now.';
+    msg.textContent = 'Hold one letter, then tap a second letter (e.g. hold J, tap T).';
   });
-  capture.addEventListener('blur', () => capture.classList.remove('recording'));
+  capture.addEventListener('blur', () => {
+    window.ghostAI.hotkeys.setCapturing(false);
+    capture.classList.remove('recording');
+  });
+  capture.addEventListener('keyup', event => {
+    const letter = letterFromEvent(event);
+    if (letter) heldLetters = heldLetters.filter(held => held !== letter);
+  });
   capture.addEventListener('keydown', async event => {
     event.preventDefault();
-    const accelerator = acceleratorFromEvent(event);
+    let accelerator;
+    const letter = letterFromEvent(event);
+    if (letter) {
+      if (event.repeat || heldLetters.includes(letter)) return;
+      heldLetters.push(letter);
+      if (heldLetters.length === 1) {
+        msg.className = 'hotkey-msg';
+        msg.textContent = `Keep holding ${letter}, now tap a second letter.`;
+        return;
+      }
+      accelerator = `${heldLetters[0]}+${letter}`;
+    } else {
+      accelerator = acceleratorFromEvent(event);
+    }
     if (!accelerator) {
       msg.className = 'hotkey-msg error';
-      msg.textContent = 'Add a letter, number, function key, or Space.';
+      msg.textContent = 'Hold one letter and tap another, e.g. J+T.';
       return;
     }
     capture.value = accelerator;
@@ -1663,6 +1712,12 @@ function showHotkeyMessage(text, state = '') {
   }, 2500);
 }
 
+// A bare A–Z key press (no modifiers), as used in letter chords.
+function letterFromEvent(event) {
+  if (event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return '';
+  return /^Key[A-Z]$/.test(event.code) ? event.code.slice(3) : '';
+}
+
 function acceleratorFromEvent(event) {
   const modifiers = [];
   if (event.ctrlKey) modifiers.push('Ctrl');
@@ -1703,6 +1758,7 @@ addHotkeyBtn.addEventListener('click', () => {
 window.ghostAI.hotkeys.onChanged(nextHotkeys => {
   hotkeys = nextHotkeys;
   renderHotkeys();
+  updateTitlebarTooltips();
 });
 
 window.ghostAI.hotkeys.onError(hotkey => {
@@ -2162,13 +2218,62 @@ function openSettings() {
 $('settings-btn').addEventListener('click', openSettings);
 $('minimize-btn').addEventListener('click', () => window.ghostAI.minimize());
 $('close-btn').addEventListener('click', () => window.ghostAI.close());
+$('screenshot-btn').addEventListener('click', () => triggerScreenshotAsk());
+$('focus-chat-btn').addEventListener('click', focusChatInput);
+
+let typeMode = false;
+const typeModeBtn = $('type-mode-btn');
+typeModeBtn.addEventListener('click', () => window.ghostAI.toggleTypeMode());
+
+function applyTypeModeState(enabled) {
+  typeMode = enabled;
+  typeModeBtn.classList.toggle('active', enabled);
+  $('app').classList.toggle('type-mode', enabled);
+  const shortcut = shortcutFor('toggle-type-mode');
+  typeModeBtn.title = enabled
+    ? `Type Mode on - typing goes here. ${shortcut ? `${shortcut} or click` : 'Click'} to give focus back`
+    : withShortcut('Type Mode off - click to focus this window and type', 'toggle-type-mode');
+}
+
+window.ghostAI.onTypeModeChanged(enabled => {
+  applyTypeModeState(enabled);
+  if (enabled) focusChatInput();
+});
+
+function focusChatInput() {
+  if (chatView.style.display !== 'none') chatInput.focus();
+  else apiInput.focus();
+}
+
+// The shortcut currently assigned to an action, e.g. "J+H", or '' if none is active.
+function shortcutFor(action) {
+  const hotkey = hotkeys.find(h => h.action === action && h.enabled && h.accelerator && !h.isDraft);
+  return hotkey ? formatAccelerator(hotkey.accelerator) : '';
+}
+
+function withShortcut(label, action) {
+  const shortcut = shortcutFor(action);
+  return shortcut ? `${label} (${shortcut})` : label;
+}
+
+function updateTitlebarTooltips() {
+  const restore = shortcutFor('show-window');
+  $('screenshot-btn').title = withShortcut('Screenshot & ask AI', 'screenshot-ask');
+  $('focus-chat-btn').title = withShortcut('Focus chat input', 'focus-chat');
+  $('minimize-btn').title = withShortcut('Hide window', 'hide-window')
+    + ` - restore with ${restore ? `${restore} or ` : ''}the ghost button`;
+  $('close-btn').title = withShortcut('Quit Ghost AI', 'quit-app');
+  applyClickThroughState(clickThrough);
+  applyTypeModeState(typeMode);
+}
 
 function applyClickThroughState(enabled) {
   clickThrough = enabled;
   clickThroughBtn.classList.toggle('active', enabled);
+  const shortcut = shortcutFor('toggle-click-through');
   clickThroughBtn.title = enabled
-    ? 'Click-through on - press Ctrl+Shift+X to turn off'
-    : 'Click-through off';
+    ? `Click-through on${shortcut ? ` - press ${shortcut} to turn off` : ''}`
+    : withShortcut('Click-through off', 'toggle-click-through');
 }
 
 clickThroughBtn.addEventListener('click', async () => {
@@ -2186,8 +2291,7 @@ window.ghostAI.db.onApiKeysSynced(() => loadApiKeys());
 window.ghostAI.hotkeys.onEvent(hotkey => {
   switch (hotkey.action) {
     case 'focus-chat':
-      if (chatView.style.display !== 'none') chatInput.focus();
-      else apiInput.focus();
+      focusChatInput();
       break;
     case 'open-settings':
       openSettings();

@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('ghostAI', {
     unregisterHotkey: (id) => ipcRenderer.invoke('hotkeys:unregister', id),
     updateHotkey: (id, updates) => ipcRenderer.invoke('hotkeys:update', id, updates),
     validateAccelerator: (accelerator, excludeId) => ipcRenderer.invoke('hotkeys:validate', accelerator, excludeId),
+    setCapturing: (capturing) => ipcRenderer.send('hotkeys:set-capturing', Boolean(capturing)),
     onChanged: (callback) => {
       const handler = (event, hotkeys) => callback(hotkeys);
       ipcRenderer.on('hotkeys-changed', handler);
@@ -56,5 +57,11 @@ contextBridge.exposeInMainWorld('ghostAI', {
   },
   close: () => ipcRenderer.send('window-close'),
   minimize: () => ipcRenderer.send('window-minimize'),
+  showWindow: () => ipcRenderer.send('window-show'),
+  toggleWindow: () => ipcRenderer.send('window-toggle'),
+  toggleTypeMode: () => ipcRenderer.invoke('type-mode:toggle'),
+  onTypeModeChanged: (callback) => {
+    ipcRenderer.on('type-mode-changed', (event, enabled) => callback(enabled));
+  },
   platform: process.platform,
 });

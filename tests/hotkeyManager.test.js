@@ -77,7 +77,7 @@ test('prevents duplicate shortcut assignments', () => {
   const result = manager.registerHotkey({
     action: 'focus-chat',
     label: 'Duplicate',
-    accelerator: 'Ctrl+Shift+I',
+    accelerator: 'j+f',
     enabled: true,
   });
 
@@ -139,4 +139,45 @@ test('falls back to disabled state when native registration fails', () => {
   assert.equal(result.success, false);
   assert.equal(result.data.enabled, false);
   assert.match(result.data.registrationError, /rejected/i);
+});
+
+test('normalizes two-letter chords and rejects bad ones', () => {
+  assert.deepEqual(normalizeAccelerator('j + t'), { success: true, accelerator: 'J+T' });
+  assert.equal(normalizeAccelerator('J+J').success, false);
+  assert.equal(normalizeAccelerator('J+1').success, false);
+  assert.equal(normalizeAccelerator('J+T+K').success, false);
+});
+
+test('chords are order-sensitive: T+J does not clash with J+T', () => {
+  const manager = createManager();
+  manager.initialize();
+  const result = manager.registerHotkey({ action: 'new-chat', label: 'New Chat', accelerator: 'T+J', enabled: true });
+  assert.equal(result.success, true);
+});
+
+test('built-in defaults are modifier-free letter chords', () => {
+  const manager = createManager();
+  manager.initialize();
+  for (const hotkey of manager.getRegisteredHotkeys()) {
+    assert.match(hotkey.accelerator, /^[A-Z]\+[A-Z]$/, hotkey.id);
+  }
+});
+
+test('migrates v1 settings: resets built-ins, keeps custom hotkeys', () => {
+  const store = new MemoryStore({
+    version: 1,
+    hotkeys: [
+      { id: 'hide-window', action: 'hide-window', label: 'Hide window', accelerator: 'CommandOrControl+Shift+Z', enabled: false, locked: true },
+      { id: 'custom-1', action: 'new-chat', label: 'New Chat', accelerator: 'Ctrl+Alt+N', enabled: true, locked: false },
+    ],
+  });
+  const manager = createManager({ store });
+  manager.initialize();
+
+  const hotkeys = manager.getRegisteredHotkeys();
+  const hide = hotkeys.find(h => h.id === 'hide-window');
+  assert.equal(hide.accelerator, 'J+H');
+  assert.equal(hide.enabled, true);
+  assert.equal(hotkeys.find(h => h.id === 'custom-1').accelerator, 'Ctrl+Alt+N');
+  assert.equal(store.value.version, 3);
 });
