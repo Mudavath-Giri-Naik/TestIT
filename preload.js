@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('ghostAI', {
   captureScreenshot: () => ipcRenderer.invoke('capture-screenshot'),
   transcribe: (opts) => ipcRenderer.invoke('transcribe-audio', opts),
   validateKey: (opts) => ipcRenderer.invoke('validate-key', opts),
+  interviewCoach: {
+    generate: (opts) => ipcRenderer.invoke('interview-coach:generate', opts),
+    abort: () => ipcRenderer.send('interview-coach:abort'),
+  },
   setClickThrough: (enabled) => ipcRenderer.invoke('set-click-through', enabled),
   db: {
     getSessions: () => ipcRenderer.invoke('db:get-sessions'),

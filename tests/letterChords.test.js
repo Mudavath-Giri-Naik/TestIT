@@ -94,3 +94,41 @@ test('modifiers bypass chords so Ctrl+J etc. keep working', () => {
   assert.equal(press('T', true, true), false);
   assert.deepEqual(fired, []);
 });
+
+function createClockedDetector() {
+  let clock = 0;
+  const fired = [];
+  const detector = new LetterChordDetector({
+    replay: () => {},
+    onChord: (accelerator) => fired.push(accelerator),
+    now: () => clock,
+    setTimer: () => 0,
+    clearTimer: () => {},
+  });
+  detector.setChords(['J+S', 'J+H']);
+  const press = (key, down) => detector.handleKey({ vk: vk(key), scanCode: 0, down });
+  return { fired, press, advance: (ms) => { clock += ms; } };
+}
+
+test('a lost J key-up does not leave single letters firing chords', () => {
+  const { fired, press, advance } = createClockedDetector();
+  press('J', true);
+  press('S', true);
+  press('S', false);
+  assert.deepEqual(fired, ['J+S']);
+  // J's key-up never reaches the hook. Later, S and H alone must just type.
+  advance(5000);
+  assert.equal(press('S', true), false);
+  assert.equal(press('S', false), false);
+  assert.equal(press('H', true), false);
+  assert.deepEqual(fired, ['J+S']);
+});
+
+test('holding J for a long time still fires chords while autorepeat arrives', () => {
+  const { fired, press, advance } = createClockedDetector();
+  press('J', true);
+  for (let i = 0; i < 10; i++) { advance(500); press('J', true); } // autorepeat
+  press('S', true);
+  press('S', false);
+  assert.deepEqual(fired, ['J+S']);
+});

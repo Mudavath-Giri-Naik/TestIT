@@ -36,6 +36,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="dsa-coach.css">
+  <script src="dsa-coach.js"></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -157,7 +159,6 @@
       border-color: var(--overlay-18);
       background: var(--overlay-08);
     }
-    #app.type-mode { border-color: var(--success); }
     .ctrl-btn.close-btn:hover { color: var(--danger); border-color: rgba(255,107,107,0.35); }
     .ctrl-btn svg { width: 13px; height: 13px; }
 
@@ -820,23 +821,19 @@
     }
 
     /* ── LIVE AGENT ── */
-    #listen-btn {
+    #listen-btn, #auto-answer-btn {
       width: 36px; height: 36px; flex-shrink: 0;
       background: var(--glass-light); border: 1px solid var(--glass-border);
       border-radius: 9px; cursor: pointer; color: var(--text-dim);
       display: flex; align-items: center; justify-content: center;
       transition: all 0.15s;
     }
-    #listen-btn:hover { color: var(--text); background: var(--overlay-08); }
-    #listen-btn svg { width: 16px; height: 16px; }
-    #listen-btn.listening {
-      color: #07070e; border-color: transparent;
-      background: linear-gradient(135deg, #FF6B6B, #FBBF24);
-      animation: listenPulse 1.4s ease-in-out infinite;
-    }
-    @keyframes listenPulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,107,0.5); }
-      50% { box-shadow: 0 0 0 6px rgba(255,107,107,0); }
+    #listen-btn:hover, #auto-answer-btn:hover { color: var(--text); background: var(--overlay-08); }
+    #listen-btn svg, #auto-answer-btn svg { width: 16px; height: 16px; }
+    #listen-btn.listening, #auto-answer-btn.listening {
+      color: var(--text);
+      border-color: var(--overlay-18);
+      background: var(--overlay-08);
     }
     #listen-status {
       font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-dim);
@@ -1075,11 +1072,18 @@
     <div id="attachment-strip"></div>
     <div id="preset-strip"></div>
     <div id="input-area">
-      <button id="listen-btn" title="Live Agent — listen to computer audio and auto-answer">
+      <button id="listen-btn" title="Transcribe computer audio into the chat box">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
           <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
           <line x1="12" y1="19" x2="12" y2="23"></line>
+        </svg>
+      </button>
+      <button id="auto-answer-btn" title="Live Agent — listen to computer audio and auto-answer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 14v-2a9 9 0 0 1 18 0v2"></path>
+          <path d="M21 16a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2zM3 16a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z"></path>
+          <path d="M12 9l-1.5 3h3L12 15"></path>
         </svg>
       </button>
       <button id="mem-mode-btn" title="Memory Mode — tell me what to remember, change, or forget">
@@ -1252,6 +1256,7 @@ const memorySaveMsg  = $('memory-save-msg');
 const memModeBtn     = $('mem-mode-btn');
 const inputArea      = $('input-area');
 const listenBtn      = $('listen-btn');
+const autoAnswerBtn  = $('auto-answer-btn');
 const listenStatus   = $('listen-status');
 const tokenEl        = $('token-count');
 const attachmentStrip = $('attachment-strip');
@@ -2228,7 +2233,6 @@ typeModeBtn.addEventListener('click', () => window.ghostAI.toggleTypeMode());
 function applyTypeModeState(enabled) {
   typeMode = enabled;
   typeModeBtn.classList.toggle('active', enabled);
-  $('app').classList.toggle('type-mode', enabled);
   const shortcut = shortcutFor('toggle-type-mode');
   typeModeBtn.title = enabled
     ? `Type Mode on - typing goes here. ${shortcut ? `${shortcut} or click` : 'Click'} to give focus back`
@@ -2666,7 +2670,9 @@ const MCQ_SYSTEM_PROMPT = `Answer the MCQ(s) in the screenshot. Reply with only 
 const CODE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>`;
 const MCQ_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>`;
 const WRONG_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
-const OPTIMISE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
+const DSA_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"></path><path d="M6 12v5c3 2 9 2 12 0v-5"></path></svg>`;
+const OPTIMISE_PROMPT = 'This code passed partial test cases and also not handles the hidden test cases and make sure you plan and think about all edge cases and more cases please get the code that passes all test cases not only visible test cases but also hidden test cases so please then only give me the code and yet the code shape and structure and variable names or naming should be unique , it does not mean long names but yet unique so that it does not look similar to internet solution which is general , go ahead';
+const OPTIMISE_ICON_SVG =`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
 
 const PRESETS = {
   coding: {
@@ -2677,8 +2683,9 @@ const PRESETS = {
   java:   { icon: CODE_ICON_SVG, label: 'Java',   title: 'Coding — Java',   prompt: 'Language = Java' },
   cpp:    { icon: CODE_ICON_SVG, label: 'C++',    title: 'Coding — C++',    prompt: 'Language = C++' },
   mcq:    { icon: MCQ_ICON_SVG,  label: 'MCQ',    title: 'Multiple-choice questions', prompt: MCQ_SYSTEM_PROMPT },
+  dsa:    { icon: DSA_ICON_SVG,  label: 'DSA',    title: 'DSA interview script — attach a screenshot; uses Python/Java/C++ if selected (default Python)', prompt: 'DSA interview script' },
   wrong:    { icon: WRONG_ICON_SVG,    label: 'Wrong answer', title: 'Tell the AI its last answer was wrong', prompt: 'Wrong answer' },
-  optimise: { icon: OPTIMISE_ICON_SVG, label: 'Optimise',     title: 'Ask the AI to optimise its last answer', prompt: 'Optimise' },
+  optimise: { icon: OPTIMISE_ICON_SVG, label: 'Optimise',     title: 'Ask the AI to optimise its last answer', prompt: OPTIMISE_PROMPT },
 };
 
 function renderPresetStrip() {
@@ -2746,7 +2753,8 @@ async function send() {
     // Save to DB
     window.ghostAI.db.addMessage(currentSessionId, 'user', label);
 
-    await runChatTurn(txt, images);
+    if (activePresets.has('dsa')) await runDsaTurn(txt, images);
+    else await runChatTurn(txt, images);
   } catch (e) {
     addMsg(`⚠ ${e.message || 'Something went wrong sending that.'}`, 'error');
   } finally {
@@ -2805,6 +2813,82 @@ async function retryChatTurn(txt, images) {
     sendBtn.disabled = false;
     isTyping = false;
     chatInput.focus();
+  }
+}
+
+// DSA preset: screenshot → structured interview script (src/dsa-coach.js renders it).
+// Always uses Gemini with the saved Gemini key, which main.js reads itself.
+function dsaLanguage() {
+  if (activePresets.has('java')) return 'Java';
+  if (activePresets.has('cpp')) return 'C++';
+  return 'Python';
+}
+
+async function runDsaTurn(txt, images) {
+  if (!images.length) {
+    addMsg('⚠ DSA needs a screenshot of the problem — capture one first (screenshot button or hotkey), then Send.', 'error');
+    return;
+  }
+  // Anything typed besides the preset prompts goes along as an extra note.
+  const presetPrompts = Object.values(PRESETS).map(p => p.prompt);
+  const note = txt.split('\n\n---\n\n').filter(part => !presetPrompts.includes(part.trim())).join('\n').trim();
+  const language = dsaLanguage();
+  const geminiModel = provider === 'gemini' ? model : (localStorage.getItem('ghost_model_gemini') || undefined);
+
+  const loading = window.DsaCoach.renderLoading();
+  messagesEl.appendChild(loading);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  let res;
+  try {
+    res = await window.ghostAI.interviewCoach.generate({ imageDataUrl: images[0], language, note, model: geminiModel });
+  } finally {
+    loading.stop();
+    loading.remove();
+  }
+
+  const retry = () => retryDsaTurn(txt, images);
+  let node;
+  if (res && res.success && !res.data.error) {
+    node = window.DsaCoach.renderResult(res.data, { model: res.model, modelNote: res.modelNote, onRegenerate: retry, scrollRoot: messagesEl });
+    const plain = window.DsaCoach.scriptText(res.data);
+    history.push({ role: 'user', content: txt || '[DSA screenshot]' }, { role: 'assistant', content: plain });
+    window.ghostAI.db.addMessage(currentSessionId, 'assistant', plain);
+  } else if (res && res.kind === 'aborted') {
+    addMsg('⏹ Generation stopped.', 'system');
+    return;
+  } else if (res && res.success) {
+    node = window.DsaCoach.renderError({
+      title: "That doesn't look like a readable coding problem",
+      message: res.data.error,
+      tips: ['Crop to just the problem statement', 'Make sure the text is sharp, not blurry', 'Include the examples and constraints if you can'],
+      onRetry: retry,
+    });
+  } else {
+    node = window.DsaCoach.renderError({
+      title: res && res.kind === 'config' ? 'Gemini key needed' : 'Something went wrong',
+      message: (res && res.error) || 'No response.',
+      details: res && res.details,
+      onRetry: res && res.kind === 'config' ? undefined : retry,
+    });
+  }
+  messagesEl.appendChild(node);
+  node.scrollIntoView({ block: 'start' });
+}
+
+async function retryDsaTurn(txt, images) {
+  if (isTyping) return;
+  isTyping = true;
+  sendBtn.style.display = 'none';
+  stopBtn.classList.add('visible');
+  try {
+    await runDsaTurn(txt, images);
+  } catch (e) {
+    addMsg(`⚠ ${e.message || 'Something went wrong.'}`, 'error');
+  } finally {
+    stopBtn.classList.remove('visible');
+    sendBtn.style.display = 'flex';
+    sendBtn.disabled = false;
+    isTyping = false;
   }
 }
 
@@ -2898,9 +2982,16 @@ function parseMemoryEdit(raw) {
 memModeBtn.addEventListener('click', () => setMemMode(!memMode));
 
 // ═══════════════════════════════════════════════
-//  LIVE AGENT — listen to system audio, auto-answer
+//  LIVE AGENT — listen to system audio
+//  Two modes share one capture pipeline:
+//   'transcribe' (mic button)         — one continuous recording; clicking the mic
+//                                       again transcribes all of it into the chat box
+//   'answer'     (auto-answer button) — each spoken turn is sent and answered
 // ═══════════════════════════════════════════════
 let listening = false;
+let listenMode = null;  // 'transcribe' | 'answer' while listening
+let laGroqKey = '';     // transcription always uses a Groq key, whatever the chat provider
+let laSession = 0;      // bumped on every stop, so a turn from an old session never restarts recording
 let laStream = null, laCtx = null, laAnalyser = null, laRecorder = null;
 let laChunks = [], laProcessing = false, laHadSpeech = false;
 let laSilenceStart = 0, laSpeechStart = 0, laRaf = null;
@@ -2918,13 +3009,48 @@ function pickAudioMime() {
   return '';
 }
 
-async function toggleListen() {
-  if (listening) { stopListening(); return; }
-  if (provider !== 'groq') {
-    addMsg('⚠ Live Agent transcribes with Groq Whisper — set your provider to Groq in Settings to use it.', 'error');
+// The Groq key used for Whisper: the current key when chatting with Groq,
+// otherwise the active (or first) saved Groq key.
+async function getGroqKey() {
+  if (provider === 'groq' && apiKey) return apiKey;
+  const res = await window.ghostAI.db.getApiKeys('groq');
+  const rows = res && res.success ? res.data : [];
+  const row = rows.find(k => k.is_active) || rows[0];
+  return row ? row.key_value : '';
+}
+
+const LISTEN_BUTTON_TITLES = {
+  transcribe: 'Transcribe computer audio into the chat box',
+  answer: 'Live Agent — listen to computer audio and auto-answer',
+};
+
+// Ignores clicks while a start/stop is still in progress (e.g. a fast double-click),
+// so two captures can never run at once.
+let listenBusy = false;
+
+async function toggleListen(mode) {
+  if (listenBusy) return;
+  listenBusy = true;
+  try {
+    await toggleListenNow(mode);
+  } finally {
+    listenBusy = false;
+  }
+}
+
+async function toggleListenNow(mode) {
+  if (listening) {
+    const wasMode = listenMode;
+    if (wasMode === 'transcribe') await finishRecording(); // stop + transcribe what was recorded
+    else stopListening();
+    if (wasMode === mode) return; // same button: stop. Other button: switch modes.
+  }
+  laGroqKey = await getGroqKey();
+  if (!laGroqKey) {
+    addMsg('⚠ Listening transcribes with Groq Whisper — add a Groq API key in Settings first.', 'error');
     return;
   }
-  if (!apiKey) { addMsg('⚠ Connect your Groq key first.', 'error'); return; }
+  if (mode === 'answer' && !apiKey) { addMsg('⚠ Connect an API key first.', 'error'); return; }
   try {
     const disp = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     disp.getVideoTracks().forEach(t => t.stop()); // audio only
@@ -2942,14 +3068,73 @@ async function toggleListen() {
     src.connect(laAnalyser);
     audioTracks[0].onended = () => stopListening(); // user stopped the share
     listening = true;
-    listenBtn.classList.add('listening');
-    listenBtn.title = 'Live Agent ON — click to stop';
-    addMsg('🎧 Live Agent on — listening to computer audio. I\'ll answer each question automatically.', 'system');
-    beginTurn();
-    monitorLoop();
+    listenMode = mode;
+    const btn = mode === 'answer' ? autoAnswerBtn : listenBtn;
+    btn.classList.add('listening');
+    btn.title = mode === 'answer' ? 'Live Agent ON — click to stop' : 'Recording computer audio — click again to transcribe';
+    if (mode === 'answer') {
+      addMsg('🎧 Live Agent on — listening to computer audio. I\'ll answer each question automatically.', 'system');
+      beginTurn();
+      monitorLoop();
+    } else {
+      startRecording();
+    }
   } catch (e) {
     addMsg('⚠ Could not start Live Agent: ' + e.message, 'error');
     stopListening();
+  }
+}
+
+// Transcribe mode: record everything until the mic is clicked again.
+let recordChunks = [];
+
+function startRecording() {
+  recordChunks = [];
+  try {
+    const mime = pickAudioMime();
+    laRecorder = new MediaRecorder(laStream, mime ? { mimeType: mime } : undefined);
+  } catch (e) {
+    addMsg('⚠ Recorder failed: ' + e.message, 'error'); stopListening(); return;
+  }
+  const chunks = recordChunks;
+  laRecorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  laRecorder.start(1000);
+  setListenStatus('recording… click mic again to transcribe', true);
+}
+
+// Stops the recording, releases the audio capture, then transcribes the whole
+// recording in the background (resolves as soon as capture is released).
+function finishRecording() {
+  const recorder = laRecorder;
+  const chunks = recordChunks;
+  if (!recorder || recorder.state === 'inactive') { stopListening(); return Promise.resolve(); }
+  return new Promise(resolve => {
+    recorder.onstop = () => {
+      const type = recorder.mimeType || 'audio/webm';
+      const blob = new Blob(chunks, { type });
+      stopListening();
+      resolve();
+      transcribeRecording(blob, type);
+    };
+    recorder.stop();
+  });
+}
+
+async function transcribeRecording(blob, type) {
+  // Only touch the status line while no new recording has started meanwhile.
+  const status = (text, active) => { if (!listening) setListenStatus(text, active); };
+  if (blob.size < LA.MIN_BYTES) { status('nothing recorded', false); return; }
+  status('transcribing…', true);
+  try {
+    const res = await window.ghostAI.transcribe({ apiKey: laGroqKey, buffer: await blob.arrayBuffer(), mimeType: type });
+    if (res.success && res.text && res.text.trim()) {
+      appendTranscript(res.text.trim());
+      status('');
+    } else {
+      status(res.error ? 'stt error: ' + res.error : 'no speech detected', !!res.error);
+    }
+  } catch (e) {
+    status('error: ' + e.message, true);
   }
 }
 
@@ -2963,7 +3148,8 @@ function beginTurn() {
     addMsg('⚠ Recorder failed: ' + e.message, 'error'); stopListening(); return;
   }
   laRecorder.ondataavailable = e => { if (e.data && e.data.size) laChunks.push(e.data); };
-  laRecorder.onstop = onTurnEnd;
+  const session = laSession, mode = listenMode;
+  laRecorder.onstop = () => onTurnEnd(session, mode);
   laRecorder.start();
   setListenStatus('listening…', true);
 }
@@ -2998,27 +3184,39 @@ function endTurn() {
   if (laRecorder && laRecorder.state === 'recording') laRecorder.stop();
 }
 
-async function onTurnEnd() {
+async function onTurnEnd(session, mode) {
   const type = (laRecorder && laRecorder.mimeType) || 'audio/webm';
   const blob = new Blob(laChunks, { type });
   if (!laHadSpeech || blob.size < LA.MIN_BYTES) {
-    if (listening) beginTurn();
+    if (listening && session === laSession) beginTurn();
     return;
   }
   setListenStatus('transcribing…', true);
   try {
     const arrayBuf = await blob.arrayBuffer();
-    const res = await window.ghostAI.transcribe({ apiKey, buffer: arrayBuf, mimeType: type });
+    const res = await window.ghostAI.transcribe({ apiKey: laGroqKey, buffer: arrayBuf, mimeType: type });
     if (res.success && res.text && res.text.trim().length > 1) {
-      setListenStatus('answering…', true);
-      await answerFromVoice(res.text.trim());
+      if (mode === 'answer') {
+        setListenStatus('answering…', true);
+        await answerFromVoice(res.text.trim());
+      } else {
+        appendTranscript(res.text.trim());
+      }
     } else if (res.error) {
       setListenStatus('stt error: ' + res.error, true);
     }
   } catch (e) {
     setListenStatus('error: ' + e.message, true);
   }
-  if (listening) beginTurn();
+  if (listening && session === laSession) beginTurn();
+}
+
+// Adds transcribed speech to the end of the chat box (never sends it).
+function appendTranscript(text) {
+  const current = chatInput.value.replace(/\s+$/, '');
+  chatInput.value = current ? `${current} ${text}` : text;
+  chatInput.dispatchEvent(new Event('input')); // re-run the auto-grow
+  chatInput.scrollTop = chatInput.scrollHeight;
 }
 
 async function answerFromVoice(txt) {
@@ -3044,21 +3242,27 @@ async function answerFromVoice(txt) {
 
 function stopListening() {
   listening = false;
+  laSession++;
   if (laRaf) cancelAnimationFrame(laRaf), laRaf = null;
   try { if (laRecorder && laRecorder.state !== 'inactive') laRecorder.stop(); } catch (e) {}
   if (laStream) { laStream.getTracks().forEach(t => t.stop()); laStream = null; }
   if (laCtx) { laCtx.close().catch(() => {}); laCtx = null; }
   laRecorder = null; laAnalyser = null; laChunks = []; laProcessing = false;
+  listenMode = null;
   listenBtn.classList.remove('listening');
-  listenBtn.title = 'Live Agent — listen to computer audio and auto-answer';
+  autoAnswerBtn.classList.remove('listening');
+  listenBtn.title = LISTEN_BUTTON_TITLES.transcribe;
+  autoAnswerBtn.title = LISTEN_BUTTON_TITLES.answer;
   setListenStatus('');
 }
 
-listenBtn.addEventListener('click', toggleListen);
+listenBtn.addEventListener('click', () => toggleListen('transcribe'));
+autoAnswerBtn.addEventListener('click', () => toggleListen('answer'));
 
 stopBtn.addEventListener('click', () => {
   if (!isTyping) return;
   window.ghostAI.abortChat();
+  window.ghostAI.interviewCoach.abort();
 });
 
 // ═══════════════════════════════════════════════

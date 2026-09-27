@@ -7,6 +7,7 @@ const { JsonSettingsStore } = require('./src/main/hotkeys/settingsStore');
 const { HOTKEY_ACTIONS, HotkeyManager, isLetterChord } = require('./src/main/hotkeys/hotkeyManager');
 const { createLetterChordBackend } = require('./src/main/hotkeys/windowsLetterChords');
 const windowFocus = require('./src/main/windowFocus');
+const interviewCoach = require('./src/main/interviewCoach');
 
 const APP_NAME = 'Ghost AI';
 const APP_ID = 'com.ghost.ai';
@@ -733,6 +734,49 @@ ipcMain.on('ai-chat-abort', () => {
     currentChatAbort.abort();
     currentChatAbort = null;
   }
+});
+
+// ── INTERVIEW COACH (DSA preset) ──
+// The Gemini key is read here from the local key store and never sent to the renderer.
+let coachAbort = null;
+
+ipcMain.handle('interview-coach:generate', async (event, opts = {}) => {
+  const check = interviewCoach.validateRequest(opts);
+  if (!check.ok) return { success: false, kind: 'input', error: check.error };
+
+  let keyRow = null;
+  try {
+    keyRow = db.getActiveApiKey('gemini') || db.getApiKeys('gemini')[0] || null;
+  } catch (e) { /* DB not ready */ }
+  if (!keyRow || !keyRow.key_value) {
+    return { success: false, kind: 'config', error: 'No Gemini API key found. Add one in Ghost AI → Settings (provider: Google Gemini).' };
+  }
+
+  // Model: GHOST_COACH_MODEL env var wins, then the Gemini model picked in Settings.
+  const requested = process.env.GHOST_COACH_MODEL || opts.model || interviewCoach.DEFAULT_MODEL;
+  const model = /^[A-Za-z0-9.\-_]+$/.test(requested) ? requested : interviewCoach.DEFAULT_MODEL;
+  const modelNote = /lite/i.test(model)
+    ? `You're using "${model}", a lite model. A stronger model (e.g. a Flash or Pro model) gives more accurate code and complexity analysis.`
+    : null;
+
+  if (coachAbort) coachAbort.abort();
+  const abort = new AbortController();
+  coachAbort = abort;
+  try {
+    const result = await interviewCoach.generate({
+      fetchImpl: net.fetch, apiKey: keyRow.key_value, model, request: check.value, signal: abort.signal,
+    });
+    return { ...result, model, modelNote };
+  } catch (e) {
+    if (e.name === 'AbortError') return { success: false, kind: 'aborted', error: 'Stopped.' };
+    return { success: false, kind: 'api', error: e.message, model, modelNote };
+  } finally {
+    if (coachAbort === abort) coachAbort = null;
+  }
+});
+
+ipcMain.on('interview-coach:abort', () => {
+  if (coachAbort) { coachAbort.abort(); coachAbort = null; }
 });
 
 // ── LIVE AGENT: transcribe an audio chunk via Groq Whisper ──

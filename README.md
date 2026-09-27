@@ -76,6 +76,18 @@ Output: `dist/Ghost AI.AppImage`
 
 ---
 
+## 🎓 Interview Coach
+
+Turns a screenshot of a DSA problem (LeetCode etc.) into the full script a candidate speaks in a live interview: understanding, constraints, brute force, optimization, code, dry run, edge cases, summary and follow-ups.
+
+- **Use it:** capture a screenshot of the problem, click the **DSA** button in the preset strip at the bottom (optionally also **Python**, **Java** or **C++**; default Python), then Send. The script appears in the chat with a section navigator, Copy buttons, Regenerate and a Focus mode (one section at a time).
+- **Key:** uses your saved Gemini API key (Settings → Google Gemini). The key stays in the main process; the chat window never sees it.
+- **Model:** the Gemini model picked in Settings, or set `GHOST_COACH_MODEL` (e.g. a Pro model) to override. Lite models are faster but less accurate on code and complexity.
+- **Prompt:** `prompts/interview_coach.md`. It's re-read on every request, so edits apply without a restart.
+- **Code:** `src/main/interviewCoach.js` (Gemini call, JSON schema, validation, one repair retry), `src/dsa-coach.js` / `.css` (chat rendering), tests in `tests/interviewCoach.test.js`.
+
+---
+
 ## 🔑 Getting Your API Key
 
 1. Go to [console.anthropic.com](https://console.anthropic.com)
