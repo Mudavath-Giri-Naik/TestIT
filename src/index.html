@@ -564,6 +564,40 @@
       background: var(--overlay-08);
     }
 
+    /* Structured answers (GD script etc.): section banners, turn headers,
+       and "say this" boxes for anything inside a blockquote. */
+    .msg.ai h2 {
+      margin: 18px 0 8px; padding: 6px 10px;
+      border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0;
+      background: var(--overlay-08); color: var(--text-strong);
+      font-size: 1.05em; letter-spacing: 0.02em;
+    }
+    .msg.ai h2:first-child { margin-top: 0; }
+    .msg.ai h3 {
+      margin: 14px 0 6px; color: var(--accent2);
+      font-size: 0.95em; text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .msg.ai blockquote {
+      position: relative;
+      margin: 8px 0; padding: 22px 12px 10px;
+      border: 1px solid var(--glass-border); border-left: 3px solid var(--accent);
+      border-radius: 8px; background: var(--overlay-08);
+      color: var(--text-strong); font-size: 1.08em; line-height: 1.65;
+    }
+    .msg.ai blockquote::before {
+      content: 'SAY THIS'; position: absolute; top: 6px; left: 12px;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.12em; color: var(--accent);
+    }
+    .msg.ai blockquote p { margin-bottom: 6px; }
+    .msg.ai blockquote .copy-say {
+      position: absolute; top: 4px; right: 6px;
+      font-size: 10px; padding: 2px 8px; cursor: pointer;
+      border: 1px solid var(--glass-border); border-radius: 5px;
+      background: transparent; color: var(--text-soft);
+    }
+    .msg.ai blockquote .copy-say:hover { color: var(--accent); border-color: var(--accent); }
+    .msg.ai strong { color: var(--text-strong); }
+
     .msg-thumbs {
       display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;
     }
@@ -2539,6 +2573,22 @@ function addMsg(text, role, images, presetPreview, onRetry) {
   } else if (text) {
     el.appendChild(document.createTextNode(text));
   }
+  if (role === 'ai') {
+    el.querySelectorAll('blockquote').forEach(bq => {
+      const spoken = bq.innerText.trim();
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'copy-say';
+      btn.textContent = 'Copy';
+      btn.addEventListener('click', () => {
+        navigator.clipboard.writeText(spoken).then(() => {
+          btn.textContent = 'Copied';
+          setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+        }).catch(() => {});
+      });
+      bq.appendChild(btn);
+    });
+  }
   if (role === 'ai' || role === 'user') makeWordsClickable(el);
   if (typeof onRetry === 'function') {
     const retryBtn = document.createElement('button');
@@ -2697,6 +2747,316 @@ const WRONG_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 const DSA_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"></path><path d="M6 12v5c3 2 9 2 12 0v-5"></path></svg>`;
 const OPTIMISE_PROMPT = 'This code passed partial test cases and also not handles the hidden test cases and make sure you plan and think about all edge cases and more cases please get the code that passes all test cases not only visible test cases but also hidden test cases so please then only give me the code and yet the code shape and structure and variable names or naming should be unique , it does not mean long names but yet unique so that it does not look similar to internet solution which is general , go ahead';
 const OPTIMISE_ICON_SVG =`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
+const GD_PROMPT = String.raw`I have an online group discussion on Google Meet (campus recruitment drive of Loyalty Juggernaut, about 8-10 participants). I am a final-year B.Tech AI & ML student. Write my complete GD script for the topic at the bottom, using exactly the method, templates and format below.
+
+=========== WRITING RULES ===========
+1. Very simple words. If a technical word comes up, break it into parts and connect it to its everyday meaning first.
+2. The SPOKEN lines must sound like a real student talking, NOT written by AI:
+   - Use contractions (it's, don't, that's, I'd).
+   - Short and medium sentences, mixed. Natural spoken rhythm, small pauses, a "see," or "honestly," once in a while.
+   - No stiff openers like "In today's fast-paced world", "In conclusion, it is evident", "delve", "moreover", "furthermore", "tapestry", "landscape", "paradigm".
+   - Do not make every sentence perfectly parallel. Do not stack buzzwords.
+   - Do not say the labels P, R, E, P aloud. Keep the PREP shape hidden inside natural speech.
+   - Vary how each turn begins. Never start two turns the same way.
+3. Real examples only (real companies, products, daily-life cases). Never invent statistics. If unsure, say "reports estimate..." or leave the number out.
+4. Every turn is 30-40 seconds spoken (about 80-100 words). The opener is about 45 seconds.
+5. Write full spoken sentences, no blanks or dots. For other participants' names, use example names (Ravi, Priya) and tell me they are examples I should replace with real names.
+6. Output must be structured: headers, tables, bullets. No long paragraphs outside the spoken lines.
+7. Write the way people TALK, not the way they write. Apply this to the start, every turn, the closing and the backup lines, for every lens (not only Economic). Before finalising each spoken block, check it against these:
+   - Banned written-English phrases: "shifts capital", "redistributes", "leverage", "facilitate", "ecosystem", "framework", "stakeholders", "mitigate", "pivotal", "crucial", "robust", "holistic", "legacy", "infrastructure", "capital", "compute", "paradigm", "synergy", "utilise". Use everyday words instead: money, spend, tools, old systems, help, make easier, risk, important.
+   - Each spoken block must use only words a 15-year-old would know. If a hard word is unavoidable, explain it in half a sentence in the same breath.
+   - Use contractions in nearly every sentence, short sentences, and plain connectors ("so", "but", "and", "see", "honestly"). No sentence longer than about 20 words.
+   - Test: read it aloud. If it sounds like a textbook or a memorised speech, rewrite it.
+8. The example inside each turn must be a specific, real, everyday case that anyone can picture (for example chatbots answering customer queries, Swiggy or Zomato delivery, UPI payments, Netflix recommendations, a bank app). Never say "major tech firms", "many experts" or "studies show" without naming something concrete. If I could not answer "which one?", do not use it. For job or hiring claims, say "a lot of companies" or "reports suggest" instead of naming a company unless it is certain.
+9. Every spoken block must be exactly what I say aloud, word for word. No placeholders, no square brackets, no round-bracket notes, no blanks, no "[Name]", "[topic]", "[morning/afternoon]" or "[relevant thing]" inside any spoken line. Fill every template completely: use the TIME OF DAY given at the bottom, example names (Ravi, Priya) for other participants, and a real, specific thing for any hook. Also write every bridge in and hand over as a finished spoken line.
+10. Every turn must start with its own bridge in, and the spoken part must end with a hand over that invites others, ideally a question that leads into the next lens. Never start cold and never end without inviting someone.
+11. Show the PREP map only as a separate bullet line OUTSIDE the spoken blockquote (for example "**PREP map:** Point = ..., Reason = ..., Example = ..., Point = ..."). Never place it inside the spoken words.
+
+=========== METHOD ===========
+PESTLE finds ideas. Each letter is a lens with one question:
+- Political: what are the government and policies doing about this?
+- Economic: who earns, saves or loses money? What does it cost?
+- Social: how does it change daily life, culture, jobs and relationships?
+- Technological: what technology makes it possible or changes it?
+- Legal: are there laws, rights or rules involved?
+- Environmental: what is the effect on nature and the planet?
+Pick only the 3 best letters for the topic: AI/apps/digital -> T, L, S | Business/jobs/prices -> E, S, T | Government/policy -> P, E, L | Energy/vehicles/climate -> E, T, P | Education/youth/society -> S, E, T.
+
+PREP shapes every turn: Point (one-line view) -> Reason (why) -> Example (real-life case) -> Point (takeaway).
+
+=========== TEMPLATE LIBRARY ===========
+For EACH slot below, choose the ONE template that fits the situation best, adjust the wording lightly so it sounds natural, and keep ONE consistent tone (confident, friendly or formal) across the whole script. Tell me in section H which tone and which templates you picked and why. Do not reuse the same template twice in one script.
+
+START / APPRECIATION + OPENING
+- Default: "Good [morning/afternoon] to the panel and my fellow participants. This is a thought-provoking topic with multiple sides, which makes our discussion more meaningful. With your permission, I would like to begin with the basic points so that we all start from a common understanding, and then move to a deeper analysis to land at a beautiful conclusion."
+- Friendly: "Hi everyone! Great topic. It has more than one side, so let me kick off with a few basics so we're all on the same track, and then we can go deeper together."
+- Question hook: "Good [morning/afternoon] everyone. Quick question: how many of us used [relevant thing] this week? That's why this topic matters."
+- Short: "Good [morning/afternoon] everyone. This topic has many angles, which makes it great for discussion. Let me begin with the basics, and then we can go deeper."
+After the opening, always add: one-line meaning of the topic, what the question is asking, a roadmap line naming the 3 lenses, and end with a hand-over like "I would like to listen to everyone's opinions on this."
+
+"MY VIEW" STARTERS (rotate): "In my view...", "From my perspective...", "The way I see it...", "From our side as students...", "Personally, I feel that...", "I strongly believe that...", "I might be looking at it differently, but...".
+
+TAKING MY CHANCE
+- At a natural pause: "May I add a point here?" / "If nobody minds, I'd like to share one quick thought."
+- Others are quiet: "Let me start us off with one point."
+- Someone is speaking too long: "That's a valid point. If I may, let me bring in one more angle so we cover all sides."
+- Formal: "If I may, I would like to contribute to this discussion."
+
+BRIDGE IN (connect to the previous speaker; use their name when known)
+- They agreed: "Good point, Ravi. Building on that..." / "I feel the same, and I'd like to add..."
+- They raised a risk: "That concern is valid, Priya, and I'd extend it with..."
+- They disagreed with someone: "Both sides have a point. Let me add a middle view..."
+- They went off topic: "That's interesting. To bring it back to our topic..."
+- They gave a statistic: "That figure is useful. It also shows that..."
+- They repeated a point: "Thank you. To add a different angle..."
+- Someone was interrupted: "Sorry, I think Ravi wanted to finish. Please go ahead."
+
+AGREE: "I completely agree, and it's backed by real businesses." / "Yes, I feel the same, and I'd add one thing." / "Well said, I second that."
+DISAGREE POLITELY: "I see your point, but I look at it differently." / "That's interesting, though I'm not fully sure. Can I share another side?" / "You're right to some extent, but there's another side we shouldn't ignore." / "With due respect, I'd like to offer a different perspective."
+
+HAND OVER (end every turn with one): "Does anyone see it differently?" / "What do the others think?" / "I'd like to hear from someone who hasn't spoken yet." / "Would anyone like to add to this?"
+
+CLOSING SUMMARY (4 parts: topic, main views for and against, where the group agreed, balanced verdict)
+- Confident: "To conclude, we looked at the benefits, the risks and the way forward. Overall, the best approach is to use it responsibly and keep trust first."
+- Friendly: "So to wrap up, we agreed on a few things and differed on a few. The balanced path is to take the good parts and manage the risks."
+- Formal: "In conclusion, the discussion highlighted multiple perspectives. A balanced approach, supported by awareness and responsibility, appears the most sustainable."
+- One-liner if time is almost over: "To sum up in one line: the opportunity is big, but it needs responsible use."
+- If someone already concluded: "I agree with that summary. I'd only add that the way forward depends on balance and awareness."
+
+=========== COMPANY KNOWLEDGE FILE (facts as of Oct 2026) ===========
+USE RULE: Company examples are OPTIONAL. Use them ONLY when they fit the topic naturally, at most 1-2 mentions in the whole script. If the topic has nothing to do with loyalty, customer data, AI in business, airlines/hotels/retail/telecom, SaaS, cloud, privacy or jobs in tech, do NOT force it. Never claim anything outside this file as fact about the company.
+
+BASICS
+- Loyalty Juggernaut, Inc. (LJI). B2B SaaS company (sells software to other businesses, rented online). Word meaning: loyalty = customers staying with a brand for rewards; juggernaut = a huge unstoppable force.
+- Founded 2015. HQ Palo Alto, California (Silicon Valley). Subsidiaries in India, UAE, China and Canada. Serves brands in about 110 countries. GRAVTY powers 80+ loyalty programs (2023 figure was 40+ ecosystems).
+- India entity: Hyderabad, incorporated October 2017. R&D and professional services there. 211 employees (Mar 2026). About 288 employees listed in total (range 200-500). All-in-office culture reported.
+- No outside funding recorded (Tracxn). India entity revenue: Rs 34.3 crore (FY23), Rs 53.9 crore (FY25), about 25% growth in FY25. FY24 not found. Global revenue is NOT public; estimates vary wildly, so never state it.
+- Website: www.lji.io
+
+PEOPLE
+- Shyam Shah: co-founder and CEO. Earlier Senior Director of Product Management for Siebel Loyalty at Oracle (2011-2014), then co-founded LJI (Oct 2015).
+- Kalpak Shah: co-founder and CTO. IIT Bombay B.Tech CS, master's at Ohio State; earlier Oracle, Palm, Efficient Frontier, ShareThis.
+- David Andreadakis: Chief Commercial Officer (joined May 2025); built programs at Aimia and Kobie.
+- Stijn Hendrikse: Chief Marketing Officer (appointed March 2026); started at Microsoft.
+- NOT confirmed: founders' nationality, how first clients came.
+
+PRODUCT: GRAVTY
+- Cloud-native, serverless, patented loyalty and customer engagement platform. One platform to run earning, spending, tiers and status for a program.
+- Features: AI for churn prediction (who may leave), fraud detection, personalization; self-service partner onboarding; automated settlements between co-brand partners; real-time loyalty liability accounting (tracking points the company owes customers); Pulsar (gen-AI personalized campaigns); GRAVTY Visual Rules (patented no-code rules engine); Agentic AI Compass (launched Oct 2025, multi-agent suite that helps human analysts); US patent #11978082.
+- Architecture (from their promo video): API gateway, auto-scaling APIs, rule engine, databases, S3 storage, batch processing for big uploads, dashboards; built around AWS services. Sold on AWS Marketplace (Amazon's online store where companies buy software that runs on AWS), base annual license listed around $100,000; real price depends on contract.
+- Customers say: campaigns launch in minutes, partners onboard in hours.
+
+REAL-LIFE USE CASES
+- WestJet: rebuilt its rewards from flight-only into a full points-and-status ecosystem with milestone awards, an eStore and a wider partner network, powered by GRAVTY.
+- Global Hotel Alliance: shared multi-brand loyalty program across 40 independent hotel brands, 800+ hotels, 100 countries.
+- Spenn (Norway, went live June 2026): shared flexible points across Norwegian Reward, Strawberry Hotels (250+ hotels) and Reitan Retail brands (7-Eleven, REMA 1000, Uno-X). Founding partners together represent over $20 billion in Nordic turnover.
+- Riyadh Air (partnership May 2025), Air Serbia (Nov 2025), Emirates Skywards (reported), Viva Aerobus, VietJet, Deutsche Telekom, Liverpool, FEMSA, Majid Al Futtaim.
+
+RECOGNITION AND COMPETITORS
+- 3-time Golden Loyalty Award winner (Best Technology Innovation, 2021-2023). Gartner Market Guide for Loyalty Program Vendors (2023). Forrester Wave: Loyalty Platforms Q4 2025: Strong Performer (first evaluation); Forrester said LJI suits multinational brands needing multi-partner programs with advanced international privacy controls.
+- Forrester Leaders: Capillary Technologies (highest scores), Epsilon, Kobie. Other Strong Performers: Bond, Comarch. Other alternatives: Salesforce Loyalty Management, Antavo, Annex Cloud, Sparta, Xoxoday.
+
+PROS / CONS / RISKS (for balanced arguments)
+- Pros: handles huge multi-brand programs, AI personalization and fraud detection, fast launches, strong global compliance.
+- Cons: expensive for small firms, built for big enterprises, few public reviews (Gartner 3 ratings, G2 2 reviews), Strong Performer not Leader, many "world's first" claims come from its own press releases.
+- General AI/data risks: privacy and consent, data shared across partner brands, leaks, wrong predictions, fraud checks blocking genuine customers, unfair offers, over-targeting.
+
+WORKING THERE
+- Hyderabad, in-office. Ratings: Glassdoor about 3.9/5, AmbitionBox about 3.8/5. Liked: job security, skill development. Complaints: work-life balance, salary/appraisals. Hiring: online assessment, PPT, coding test, 3 technical interviews, HR. Interviewers often ask about projects and basics.
+
+=========== OUTPUT FORMAT (follow this order) ===========
+A. 60-SECOND THINKING SHEET (table): one-line definition, topic type, the 3 PESTLE letters picked, and a quick answer to each letter's question. Also say in one line whether a company example fits this topic and where, or that none is used.
+B. START SCRIPT (about 45 seconds), then the hand-over.
+C. TURN 1, TURN 2, TURN 3, each on a DIFFERENT lens (x, y, z). For each turn give:
+   1. Taking my chance (2 options)
+   2. Bridge in: two versions, "if they agreed" and "if they raised a risk or disagreed"
+   3. The point, as natural spoken words (PREP shape hidden), with a side note in brackets showing where P, R, E, P sit
+   4. Hand over
+D. TURN 4: respond to the strongest opposing view or fill a gap the group missed, then give a way forward. Same four parts.
+E. CLOSING: bridge in by naming 2 viewpoints the group raised, then the 4-part summary.
+F. BACKUP LINES: mind goes blank, someone interrupts me, someone speaks too long, group goes off topic.
+G. THREE LIKELY COUNTERPOINTS other participants may raise, with a short reply to each.
+H. TEMPLATE CHOICES: which tone and which template you picked for each slot, and why, in one short table.
+
+=========== TOPIC ===========
+TOPIC: [write your topic here]
+TIME OF DAY: [morning or afternoon]
+PANEL SIZE: [number of participants if known]
+
+=========== RESPONSE FORMAT ===========
+Return GitHub-flavored Markdown only. Rules:
+- Use ## for the A-H sections and ### for each turn. No # headings.
+- Spoken lines go in blockquotes starting with "> ". Everything I should say aloud must be inside a blockquote, and nothing else may be.
+- Use a table only for the thinking sheet and the template choices. Keep tables to 3 columns or fewer, with short cells, so they fit on a phone.
+- Use bullets for options. Bold only labels, like **Taking my chance:**.
+- Inside every blockquote there must be only clean, ready-to-speak sentences: no brackets of any kind, no placeholders, no stage notes, no labels like "Spoken:" or "Point:".
+- No emojis, no HTML, no horizontal rules, no text before the first heading or after the last section.`;
+const GD_PRO_PROMPT = String.raw`You are my live group-discussion (GD) coach. I am a final-year B.Tech AI & ML student in an online GD on Google Meet (campus recruitment drive of Loyalty Juggernaut, about 8-10 participants). This whole conversation is ONE continuous GD. Everything is connected: never repeat a lens, point, example or template I have already used, and always build on what happened earlier in this conversation.
+
+========== THE THREE TASKS ==========
+My messages come from three buttons. Recognise the task from the FIRST SENTENCE of my message. Whatever I typed BELOW the button text is my input.
+1) "Start the conversation" -> plan the GD and give my opening. My typed input is the topic, and may include time of day, panel size, tone or participant names. If time of day is not given, use the local time in this system message; if there is none, say "Good day".
+2) "Here is what others just said" -> give my next turn. My typed input is the transcription of what the others said. It may be messy speech-to-text, may merge several speakers, may include names, and may include my own notes such as "they spoke too long", "I was interrupted", "off topic" or "time almost up". Read those notes as the situation.
+3) "Close the GD" -> give my closing. My typed input is optional. If I typed nothing, use only the conversation history.
+If I type only the word STUCK, give a 20-second safe line plus one question to throw to the group.
+
+========== SPEAKING RULES ==========
+1. Very simple words. If a technical word comes up, break it into parts and connect it to its everyday meaning first.
+2. Spoken lines must sound like a real student talking, not AI:
+   - Use contractions (it's, don't, that's, I'd). Mix short and medium sentences. Natural rhythm, an occasional "see," or "honestly,".
+   - Banned: "In today's fast-paced world", "In conclusion, it is evident", "delve", "moreover", "furthermore", "tapestry", "landscape", "paradigm", and stacked buzzwords.
+   - Do not say the letters P, R, E, P aloud. Vary how each turn begins.
+3. Each turn is 30-40 seconds spoken (about 80-100 words). The opening is about 45 seconds. Always also give a 15-second short version.
+4. Real examples only. Never invent statistics. If unsure, say "reports suggest..." or leave the number out.
+5. Use ONE consistent tone (confident, friendly or formal) for the whole GD. If I don't choose, choose one in the first reply and tell me. Pick the best template for each slot from the library below, and never use the same template twice in a row.
+6. Use example names (Ravi, Priya) only if I haven't given real names, and tell me to replace them.
+
+========== METHOD ==========
+PESTLE finds ideas. Each letter is a lens with one question:
+- Political: what are the government and policies doing about this?
+- Economic: who earns, saves or loses money? What does it cost?
+- Social: how does it change daily life, culture, jobs and relationships?
+- Technological: what technology makes it possible or changes it?
+- Legal: are there laws, rights or rules involved?
+- Environmental: what is the effect on nature and the planet?
+Best letters by topic: AI/apps/digital -> T, L, S | Business/jobs/prices -> E, S, T | Government/policy -> P, E, L | Energy/vehicles/climate -> E, T, P | Education/youth/society -> S, E, T. Pick the 3 best letters for the topic and use a different one for each of my turns.
+PREP shapes every turn: Point (one-line view) -> Reason (why) -> Example (real-life case) -> Point (takeaway), hidden inside natural speech.
+
+========== ENGAGE OR PIVOT (task 2) ==========
+Judge what the last person said. It is WORTH ENGAGING if at least two are true: (a) relevant to the topic, (b) has a real claim, reason or example I can build on, agree with or politely correct, (c) it is a risk or opposing view that needs an answer, or the group will remember it, (d) I haven't already covered it. Otherwise PIVOT: give a one-line polite acknowledgment (never insult or ignore anyone), then move to a fresh lens or an unexplored side of the topic.
+
+========== SPECIAL CASES ==========
+- Several people spoke: respond to the strongest point and mention the others briefly by name.
+- They said something wrong: correct politely ("I see it a bit differently, because...") and never embarrass them.
+- They gave a number: don't repeat it as a fact. Say "that figure shows..." or "reports suggest...".
+- Pause or nobody speaking: use a "taking my chance" line and start with the best fresh angle.
+- Someone spoke too long: polite "if I may" entry plus a short bridge.
+- I was interrupted: one line to hand the floor back politely and re-enter later.
+- Off topic: bring the group back gently.
+- Transcript unclear: say which part you assumed, in one line.
+
+========== TEMPLATE LIBRARY ==========
+OPENING / APPRECIATION: Default: "Good [morning/afternoon] to the panel and my fellow participants. This is a thought-provoking topic with multiple sides, which makes our discussion more meaningful. With your permission, I would like to begin with the basic points so that we all start from a common understanding, and then move to a deeper analysis to land at a beautiful conclusion." | Friendly: "Hi everyone! Great topic. It has more than one side, so let me kick off with a few basics so we're all on the same track, and then we can go deeper together." | Question hook: "Good [morning/afternoon] everyone. Quick question: how many of us used [relevant thing] this week? That's why this topic matters." | Short: "Good [morning/afternoon] everyone. This topic has many angles, which makes it great for discussion. Let me begin with the basics, and then we can go deeper." After the opening always add: a one-line meaning of the topic, what the question is asking, a roadmap line naming the 3 lenses, and end with a hand-over like "I would like to listen to everyone's opinions on this."
+"MY VIEW" STARTERS (rotate): "In my view...", "From my perspective...", "The way I see it...", "From our side as students...", "Personally, I feel that...", "I strongly believe that...".
+TAKING MY CHANCE: "May I add a point here?" / "If nobody minds, I'd like to share one quick thought." / "Let me start us off with one point." / "That's a valid point. If I may, let me bring in one more angle so we cover all sides." / "If I may, I would like to contribute to this discussion."
+BRIDGE IN: They agreed: "Good point, Ravi. Building on that..." / "I feel the same, and I'd like to add..." | They raised a risk: "That concern is valid, Priya, and I'd extend it with..." | They disagreed with someone: "Both sides have a point. Let me add a middle view..." | They went off topic: "That's interesting. To bring it back to our topic..." | They gave a statistic: "That figure is useful. It also shows that..." | They repeated a point: "Thank you. To add a different angle..." | Someone was interrupted: "Sorry, I think Ravi wanted to finish. Please go ahead."
+AGREE: "I completely agree, and it's backed by real businesses." / "Yes, I feel the same, and I'd add one thing." / "Well said, I second that."
+DISAGREE POLITELY: "I see your point, but I look at it differently." / "That's interesting, though I'm not fully sure. Can I share another side?" / "You're right to some extent, but there's another side we shouldn't ignore." / "With due respect, I'd like to offer a different perspective."
+HAND OVER (end every turn with one): "Does anyone see it differently?" / "What do the others think?" / "I'd like to hear from someone who hasn't spoken yet." / "Would anyone like to add to this?"
+CLOSING: Confident: "To conclude, we looked at the benefits, the risks and the way forward. Overall, the best approach is to use it responsibly and keep trust first." | Friendly: "So to wrap up, we agreed on a few things and differed on a few. The balanced path is to take the good parts and manage the risks." | Formal: "In conclusion, the discussion highlighted multiple perspectives. A balanced approach, supported by awareness and responsibility, appears the most sustainable." | One-liner: "To sum up in one line: the opportunity is big, but it needs responsible use." | If someone already concluded: "I agree with that summary. I'd only add that the way forward depends on balance and awareness."
+
+========== COMPANY KNOWLEDGE (optional use) ==========
+USE RULE: Use a company example ONLY when it fits the topic and what was just said, at most once or twice in the whole GD. Never force it. Never claim anything outside this list as fact about the company.
+- Loyalty Juggernaut (LJI): B2B SaaS company (sells software to businesses, rented online). Founded 2015, HQ Palo Alto, big engineering centre in Hyderabad (India entity set up 2017, about 211 employees in Mar 2026). Subsidiaries in India, UAE, China and Canada. Serves brands in about 110 countries; GRAVTY powers 80+ loyalty programs.
+- CEO and co-founder Shyam Shah (earlier led Siebel Loyalty product management at Oracle). CTO and co-founder Kalpak Shah (IIT Bombay). Founders' nationality and how first clients came: not confirmed.
+- Product GRAVTY: cloud-native, serverless, patented loyalty platform. AI for churn prediction, fraud detection and personalization; self-service partner onboarding; automated partner settlements; real-time liability accounting (tracking points owed); Pulsar (gen-AI campaigns); Visual Rules (no-code rules engine); Agentic AI Compass (Oct 2025, multi-agent suite that helps human analysts). Built around AWS, sold on AWS Marketplace (listed around $100,000 per year; real price depends on contract).
+- Examples: WestJet rebuilt its rewards from flight-only into a points-and-status ecosystem; Global Hotel Alliance runs one shared program across 40 hotel brands; Spenn (Norway, June 2026) shares points across Norwegian, Strawberry Hotels, 7-Eleven and REMA 1000; others include Emirates Skywards (reported), Riyadh Air, Air Serbia, Deutsche Telekom.
+- Recognition: Forrester Wave Loyalty Platforms Q4 2025, Strong Performer (not Leader; Leaders were Capillary, Epsilon and Kobie); Forrester said it suits multinational brands needing advanced privacy controls.
+- Cons and risks: expensive for small firms, few public reviews, many "world's first" claims come from its own press releases; general AI risks are privacy and consent, data sharing across partners, leaks, wrong predictions and unfair offers.
+- Global revenue is NOT public. Never state it.
+
+========== GD STATE (end EVERY reply with this block) ==========
+End every reply with this exact fenced block, updated each time. Keep it compact.
+GD STATE
+topic:
+tone:
+my_lenses_used:
+lenses_left:
+my_points_made: (one line each, with turn number)
+templates_used: (so I don't repeat them)
+people: (name: stance in a few words)
+open_points: (unanswered claims or risks someone raised)
+turn_count:
+
+are you ready???`;
+const GD_START_PROMPT = String.raw`Start the conversation. Plan this GD and give me my opening. The topic and any extra details (time of day, panel size, tone, names) are typed below.
+
+Do this in order, keep it short:
+1) PLAN (a small table): one-line definition, topic type, my 3 PESTLE letters, which lens goes to which turn (Turn 1, 2, 3, 4 and closing), one angle per lens, and 3 reserve points in case I run out. Add one line saying whether a company example fits this topic and where, or that none will be used.
+2) OPENING SCRIPT in a quote block, about 45 seconds. It must have a greeting, a short appreciation line, a one-line meaning of the topic, what the question is asking, a roadmap line naming my 3 lenses, and end with a hand-over like "I would like to listen to everyone's opinions on this." It must read like one natural spoken paragraph, for example: "Good afternoon everyone. This topic has many angles, which makes it great for discussion. Let me begin with the basics, and then we can go deeper. See, [simple meaning of the key term]. The core question is [the question in one line]. We can look at this through three lenses: [lens 1], [lens 2] and [lens 3]. I would like to listen to everyone's opinions on this." Do not copy that wording; write fresh lines in the same spirit.
+3) SHORT VERSION of the opening (15 seconds).
+4) "IF THE FIRST SPEAKER SAYS...": 3 likely first reactions (agree, disagree, off topic) with a one-line way I should respond to each.
+5) Tell me which tone and which templates you chose, in one line.
+Finish with the GD STATE block.
+
+Topic and details:
+`;
+const GD_OTHERS_PROMPT = String.raw`Here is what others just said. Give me my next turn. The transcription (and any note about the situation) is typed below.
+
+STARTER LIBRARY FOR MY BRIDGE-IN
+Pick the ONE starter that best fits what the last person did, and adjust the wording lightly so it sounds natural. Use the real name from the transcription (replace "Aman", "Priya" and "Ravi" below with the actual names). If no name is given, use a nameless version such as "Building on the last point, ..." or "As one of us said earlier, ...". Never repeat a starter I have already used in this conversation (check "templates_used" in the GD STATE), and never use the same group twice in a row.
+
+1. Building on one person
+- "As Aman mentioned, ..."
+- "Building on what Aman said, ..."
+- "Aman made a good point, and I'd add that..."
+- "Taking Aman's point a step further, ..."
+- "Just like Aman said, ..."
+- "Aman touched on something important, and I'd like to build on it..."
+- "Going back to Aman's point about [his topic], ..."
+- "To add to what Aman just said, ..."
+
+2. Agreeing and adding
+- "I agree with Aman, and one more thing..."
+- "That's true, Aman, and it also shows that..."
+- "Yes, and to put Aman's point in a real-life case, ..."
+- "Aman is right, and I'd support it with an example..."
+
+3. Linking two people
+- "Aman talked about the benefits and Priya raised the risks. Putting both together, ..."
+- "Aman and Priya are looking at the same thing from different sides, and I'd say..."
+- "I see a connection between what Aman and Ravi said, ..."
+
+4. Adding a new angle to someone's point
+- "Aman looked at this from the technology side. Let me add the money side."
+- "That covers the customer's view. What about the company's view?"
+- "Aman explained the 'what', and I'd like to talk about the 'why'."
+- "Aman gave us the benefit. Let's also look at the risk."
+
+5. Politely correcting or disagreeing
+- "I see Aman's point, but I look at it a bit differently, because..."
+- "Aman is right to some extent, but there's another side."
+- "With respect to Aman's view, one thing we shouldn't miss is..."
+- "I understand where Aman is coming from, though I feel..."
+
+6. Going back to something said earlier
+- "Going back to what Aman said earlier, ..."
+- "Earlier Ravi mentioned [his point], and it connects with this."
+- "This brings me back to Priya's first point, ..."
+
+HOW TO PICK
+- They made a good point I can extend -> group 1 or 2.
+- Two people said related things -> group 3.
+- Their point is fine but one side is missing -> group 4.
+- Their point is weak, risky or wrong -> group 5 (polite, never embarrassing).
+- Something said earlier is now relevant -> group 6.
+- Only quote or attribute what they actually said. If the transcription is unclear, use a nameless starter.
+- The starter is one sentence, then straight into my point.
+
+Do this, keep it short:
+1) VERDICT: "ENGAGE" or "PIVOT" with one line why, plus the lens used and the starter group and template names chosen (never repeat earlier ones).
+2) WHAT I HEARD: one line per speaker with their main claim, so I can check the transcription was understood.
+3) SAY THIS (a single quote block, ready to read aloud, in this order): taking-my-chance line, the chosen starter using their name, my point (30-40 seconds, PREP hidden inside natural speech), and a hand-over. If I should not engage, use a polite acknowledgment and then pivot to a fresh lens.
+4) SHORT VERSION (15 seconds).
+5) PREP MAP in brackets (Point / Reason / Example / Takeaway), one line each, for my reference only.
+6) NEXT: the lenses and angles I still have, plus one angle to keep ready for my next turn.
+7) WARNING: only if something I typed looks wrong, weak or already covered.
+Finish with the updated GD STATE block.
+
+What they said:
+`;
+const GD_SUMMARY_PROMPT = String.raw`Close the GD. Using everything in this conversation (the topic, every speaker and what they argued, and what I already said), plus anything I typed below, do this:
+1) SAY THIS (a single quote block, about 35-40 seconds): a bridge-in that names 2 viewpoints from specific participants by name, then a 4-part closing summary (the topic, the main views for and against, where the group agreed, and a balanced verdict), ending with a polite thanks. Choose the closing template that best fits the mood of the discussion and my tone. Do not repeat points I have already made word for word.
+2) SHORT VERSION (15 seconds) in case time is almost over.
+3) IF SOMEONE ALREADY CONCLUDED: a one-line alternative I can use instead.
+4) ONE LAST STRONG LINE I can add only if I get extra seconds.
+5) TABLE: each participant, their stance in a few words, and whether they and the group ended up agreeing.
+6) FOR MY REFERENCE: lenses covered, lenses missed, and one thing I would improve next time.
+Finish with the final GD STATE block.
+
+Anything extra (optional):
+`;
+const GD_ICON_SVG =`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>`;
 
 const PRESETS = {
   coding: {
@@ -2710,6 +3070,12 @@ const PRESETS = {
   dsa:    { icon: DSA_ICON_SVG,  label: 'DSA',    title: 'DSA interview script — attach a screenshot; uses Python/Java/C++ if selected (default Python)', prompt: 'DSA interview script' },
   wrong:    { icon: WRONG_ICON_SVG,    label: 'Wrong answer', title: 'Tell the AI its last answer was wrong', prompt: 'Wrong answer' },
   optimise: { icon: OPTIMISE_ICON_SVG, label: 'Optimise',     title: 'Ask the AI to optimise its last answer', prompt: OPTIMISE_PROMPT },
+  // One-shot: pastes the prompt into the input box; never toggles on or persists.
+  gd:       { icon: GD_ICON_SVG,       label: 'GD',           title: 'Paste the group-discussion script prompt into the input box', prompt: GD_PROMPT, oneShot: true },
+  gdpro:    { icon: GD_ICON_SVG,       label: 'GD Pro',       title: 'Paste the live GD coach setup prompt (send this once at the start of the chat)', prompt: GD_PRO_PROMPT, oneShot: true },
+  gdstart:  { icon: GD_ICON_SVG,       label: 'Start the conversation', title: 'Paste the "plan + opening" prompt, then type the topic below it', prompt: GD_START_PROMPT, oneShot: true },
+  gdothers: { icon: GD_ICON_SVG,       label: 'What others spoke',      title: 'Paste the "next turn" prompt, then type what others said below it', prompt: GD_OTHERS_PROMPT, oneShot: true },
+  gdsummary:{ icon: GD_ICON_SVG,       label: 'Summary of the whole',   title: 'Paste the "close the GD" prompt', prompt: GD_SUMMARY_PROMPT, oneShot: true },
 };
 
 function renderPresetStrip() {
@@ -2731,6 +3097,15 @@ function renderPresetStrip() {
 // what you see in the box is exactly what Send will send — no hidden system
 // prompt swap to get out of sync with the actual request.
 function togglePreset(key) {
+  if (PRESETS[key] && PRESETS[key].oneShot) {
+    chatInput.value = PRESETS[key].prompt;
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 110) + 'px';
+    chatInput.focus();
+    chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
+    chatInput.scrollTop = chatInput.scrollHeight;
+    return;
+  }
   if (activePresets.has(key)) activePresets.delete(key);
   else activePresets.add(key);
   localStorage.setItem('ghost_presets', JSON.stringify([...activePresets]));
