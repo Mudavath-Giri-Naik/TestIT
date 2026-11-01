@@ -598,6 +598,47 @@
     .msg.ai blockquote .copy-say:hover { color: var(--accent); border-color: var(--accent); }
     .msg.ai strong { color: var(--text-strong); }
 
+    /* Sectioned answers: each "## " block becomes a card (see addMsg). */
+    .msg.ai .md-card {
+      margin: 10px 0; padding: 0 12px 10px;
+      border: 1px solid var(--glass-border); border-radius: 10px;
+      background: var(--overlay-08); overflow: hidden;
+    }
+    .msg.ai .md-card > h2 {
+      margin: 0 -12px 10px; padding: 8px 12px;
+      border: 0; border-bottom: 1px solid var(--glass-border); border-radius: 0;
+      background: linear-gradient(90deg, rgba(125,249,170,0.14), transparent);
+      border-left: 3px solid var(--accent);
+    }
+    .msg.ai .md-card > h3 { margin-top: 10px; }
+    .msg.ai .md-card > ul { list-style: none; margin-left: 0; }
+    .msg.ai .md-card > ul > li {
+      padding: 5px 0 5px 10px; margin: 0;
+      border-left: 2px solid var(--glass-border);
+      border-bottom: 1px dashed var(--glass-border);
+    }
+    .msg.ai .md-card > ul > li:last-child { border-bottom: 0; }
+    .msg.ai .md-card > ul > li > strong:first-child {
+      color: var(--accent2); font-weight: 600; margin-right: 2px;
+    }
+    .msg.ai .md-card > p:last-child { margin-bottom: 0; }
+
+    /* Tables: rounded, sticky-looking header, first column as the row label. */
+    .msg.ai table {
+      border-collapse: separate; border-spacing: 0;
+      border: 1px solid var(--glass-border); border-radius: 8px;
+      width: 100%; background: transparent;
+    }
+    .msg.ai th, .msg.ai td { border: 0; border-bottom: 1px solid var(--glass-border); }
+    .msg.ai th + th, .msg.ai td + td { border-left: 1px solid var(--glass-border); }
+    .msg.ai tr:last-child td { border-bottom: 0; }
+    .msg.ai th {
+      font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--accent2); background: var(--overlay-08);
+    }
+    .msg.ai td:first-child { font-weight: 600; color: var(--text-strong); }
+    .msg.ai td { line-height: 1.5; min-width: 90px; }
+
     .msg-thumbs {
       display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;
     }
@@ -1229,14 +1270,15 @@ const CFG = {
   },
   gemini: {
     accent: '#4FC3F7', accent2: '#CE93D8',
-    keyLbl: 'Google AI API Key', keyPlaceholder: 'AIzaSy...',
+    keyLbl: 'Google AI API Key', keyPlaceholder: 'AIzaSy... or AQ....',
     keyHelp: 'Get free key → aistudio.google.com/app/apikey',
     models: [
       { v: 'gemini-3.6-flash',      l: 'Gemini 3.6 Flash · Latest stable, agentic' },
       { v: 'gemini-3.5-flash',      l: 'Gemini 3.5 Flash · Coding & logic' },
       { v: 'gemini-3.5-flash-lite', l: 'Gemini 3.5 Flash Lite · Fastest, low-cost' },
+      { v: 'gemini-3.1-flash-lite', l: 'Gemini 3.1 Flash Lite · Budget, low latency' },
+      { v: 'gemma-4-26b-a4b-it',    l: 'Gemma 4 26B · Open model, free' },
       { v: 'gemini-2.5-flash',      l: 'Gemini 2.5 Flash · 1M context' },
-      { v: 'gemini-2.5-flash-lite', l: 'Gemini 2.5 Flash Lite · Cost-efficient' },
     ],
   },
   grok: {
@@ -1486,6 +1528,7 @@ function getContextLimit(mdl) {
   if (m.includes('llama3-70b')) return 8192;
   if (m.includes('mixtral')) return 32768;
   if (m.includes('gemma2')) return 8192;
+  if (m.includes('gemma-4')) return 131072;
   if (m.includes('qwen')) return 131072;
   if (m.includes('claude')) return 200000;
   if (m.includes('gemini')) return 1048576; // 1M
@@ -2077,10 +2120,14 @@ async function runValidation() {
   const formatOk = (() => {
     if (p === 'groq')      return key.startsWith('gsk_');
     if (p === 'anthropic') return key.startsWith('sk-ant') || key.startsWith('sk-');
-    // Google is mid-migration between the old "AIza..." key format and a newer
-    // one (e.g. "AQ...."), so don't hard-match a prefix here — the real check
-    // is the actual API call in the next step. Just guard against empty/junk input.
-    if (p === 'gemini')    return key.length > 20;
+    // Google issues two key formats: classic "AIza..." (39 chars) and newer
+    // "AQ...." keys (longer, ~53). Each is checked against its own shape only;
+    // the real check is the actual API call in the next step.
+    if (p === 'gemini') {
+      if (key.startsWith('AIza')) return /^AIza[\w-]{35}$/.test(key);
+      if (key.startsWith('AQ.'))  return /^AQ\.[\w.-]{20,}$/.test(key);
+      return false;
+    }
     if (p === 'grok')      return key.startsWith('xai-');
     return true;
   })();
@@ -2574,6 +2621,19 @@ function addMsg(text, role, images, presetPreview, onRetry) {
     el.appendChild(document.createTextNode(text));
   }
   if (role === 'ai') {
+    // Long structured answers: wrap each "## " heading and its content in a card.
+    const h2s = el.querySelectorAll(':scope > h2');
+    if (h2s.length >= 3) {
+      h2s.forEach(h2 => {
+        const card = document.createElement('section');
+        card.className = 'md-card';
+        h2.before(card);
+        card.appendChild(h2);
+        while (card.nextSibling && !(card.nextSibling.nodeName === 'H2')) {
+          card.appendChild(card.nextSibling);
+        }
+      });
+    }
     el.querySelectorAll('blockquote').forEach(bq => {
       const spoken = bq.innerText.trim();
       const btn = document.createElement('button');
@@ -2747,150 +2807,145 @@ const WRONG_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 const DSA_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"></path><path d="M6 12v5c3 2 9 2 12 0v-5"></path></svg>`;
 const OPTIMISE_PROMPT = 'This code passed partial test cases and also not handles the hidden test cases and make sure you plan and think about all edge cases and more cases please get the code that passes all test cases not only visible test cases but also hidden test cases so please then only give me the code and yet the code shape and structure and variable names or naming should be unique , it does not mean long names but yet unique so that it does not look similar to internet solution which is general , go ahead';
 const OPTIMISE_ICON_SVG =`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
-const GD_PROMPT = String.raw`I have an online group discussion on Google Meet (campus recruitment drive of Loyalty Juggernaut, about 8-10 participants). I am a final-year B.Tech AI & ML student. Write my complete GD script for the topic at the bottom, using exactly the method, templates and format below.
+const GD_PROMPT = String.raw`You are my GD topic coach. I am a final-year B.Tech AI & ML student preparing for an online group discussion (campus recruitment drive of Loyalty Juggernaut). Every message I send will be ONLY a topic name. Reply immediately with the full output described below. Help me UNDERSTAND the topic well enough to speak about it. Do NOT write any speech, script, opening lines, bridge lines, starters or conclusions. Only explain and plan.
 
-=========== WRITING RULES ===========
-1. Very simple words. If a technical word comes up, break it into parts and connect it to its everyday meaning first.
-2. The SPOKEN lines must sound like a real student talking, NOT written by AI:
-   - Use contractions (it's, don't, that's, I'd).
-   - Short and medium sentences, mixed. Natural spoken rhythm, small pauses, a "see," or "honestly," once in a while.
-   - No stiff openers like "In today's fast-paced world", "In conclusion, it is evident", "delve", "moreover", "furthermore", "tapestry", "landscape", "paradigm".
-   - Do not make every sentence perfectly parallel. Do not stack buzzwords.
-   - Do not say the labels P, R, E, P aloud. Keep the PREP shape hidden inside natural speech.
-   - Vary how each turn begins. Never start two turns the same way.
-3. Real examples only (real companies, products, daily-life cases). Never invent statistics. If unsure, say "reports estimate..." or leave the number out.
-4. Every turn is 30-40 seconds spoken (about 80-100 words). The opener is about 45 seconds.
-5. Write full spoken sentences, no blanks or dots. For other participants' names, use example names (Ravi, Priya) and tell me they are examples I should replace with real names.
-6. Output must be structured: headers, tables, bullets. No long paragraphs outside the spoken lines.
-7. Write the way people TALK, not the way they write. Apply this to the start, every turn, the closing and the backup lines, for every lens (not only Economic). Before finalising each spoken block, check it against these:
-   - Banned written-English phrases: "shifts capital", "redistributes", "leverage", "facilitate", "ecosystem", "framework", "stakeholders", "mitigate", "pivotal", "crucial", "robust", "holistic", "legacy", "infrastructure", "capital", "compute", "paradigm", "synergy", "utilise". Use everyday words instead: money, spend, tools, old systems, help, make easier, risk, important.
-   - Each spoken block must use only words a 15-year-old would know. If a hard word is unavoidable, explain it in half a sentence in the same breath.
-   - Use contractions in nearly every sentence, short sentences, and plain connectors ("so", "but", "and", "see", "honestly"). No sentence longer than about 20 words.
-   - Test: read it aloud. If it sounds like a textbook or a memorised speech, rewrite it.
-8. The example inside each turn must be a specific, real, everyday case that anyone can picture (for example chatbots answering customer queries, Swiggy or Zomato delivery, UPI payments, Netflix recommendations, a bank app). Never say "major tech firms", "many experts" or "studies show" without naming something concrete. If I could not answer "which one?", do not use it. For job or hiring claims, say "a lot of companies" or "reports suggest" instead of naming a company unless it is certain.
-9. Every spoken block must be exactly what I say aloud, word for word. No placeholders, no square brackets, no round-bracket notes, no blanks, no "[Name]", "[topic]", "[morning/afternoon]" or "[relevant thing]" inside any spoken line. Fill every template completely: use the TIME OF DAY given at the bottom, example names (Ravi, Priya) for other participants, and a real, specific thing for any hook. Also write every bridge in and hand over as a finished spoken line.
-10. Every turn must start with its own bridge in, and the spoken part must end with a hand over that invites others, ideally a question that leads into the next lens. Never start cold and never end without inviting someone.
-11. Show the PREP map only as a separate bullet line OUTSIDE the spoken blockquote (for example "**PREP map:** Point = ..., Reason = ..., Example = ..., Point = ..."). Never place it inside the spoken words.
+========== WRITING RULES (follow strictly) ==========
+1. Use very simple words, like explaining to a smart friend. Short sentences. One idea per sentence.
+2. No jargon. If a technical or business word is unavoidable, explain it first: break the word into parts, connect each part to its everyday meaning, then give the topic meaning. Example style: "Stakeholder: stake = something you can win or lose, holder = the one who holds it. So it means anyone who can gain or lose from this."
+3. No ambiguity. Say clearly who, what, why. Never use vague phrases like "various factors", "many aspects" or "it depends" without saying what it depends on.
+4. Prefer real examples (real companies, real products, daily-life cases) over abstract comparisons. Never invent statistics or facts. If a number is uncertain, say "reports suggest..." or leave it out. If you are not sure a fact is true, say so.
+5. If the topic is unclear or has two possible meanings, state the meaning you chose in one line and continue. Do not ask me questions.
+6. Do not repeat the same point in two sections.
 
-=========== METHOD ===========
-PESTLE finds ideas. Each letter is a lens with one question:
+========== HOW YOU DECIDE THINGS (use these choices automatically) ==========
+
+CHOICE 1: TOPIC TYPE (pick exactly one)
+- AI / apps / digital / data / privacy
+- Business / jobs / prices / customers / startups
+- Government / policy / law / public schemes
+- Energy / vehicles / climate / environment
+- Education / youth / careers / society / social media
+- Abstract (one word or idea, like "Zero" or "Trust")
+- Case study / problem statement
+
+CHOICE 2: WHAT THE PANEL EXPECTS (pick based on the topic's wording)
+- "Boon or bane", "killer or creator", "good or bad" -> look at both sides, then a balanced verdict
+- "Should...?" -> a clear stand with conditions
+- "A vs B" -> compare on 2-3 clear points, then say which fits when
+- "Is X dead?", "future or hype?" -> trends and evidence, not only opinion
+- Abstract word -> my own meaning of the word first, then link it to real life
+- Case study -> problem, causes, solution, next steps
+Also say what the panel is really testing (clear thinking, balance, listening, teamwork, calm leadership, or knowledge).
+
+CHOICE 3: PESTLE LENSES (pick the best 3 letters, with 2 backups)
 - Political: what are the government and policies doing about this?
 - Economic: who earns, saves or loses money? What does it cost?
 - Social: how does it change daily life, culture, jobs and relationships?
 - Technological: what technology makes it possible or changes it?
 - Legal: are there laws, rights or rules involved?
 - Environmental: what is the effect on nature and the planet?
-Pick only the 3 best letters for the topic: AI/apps/digital -> T, L, S | Business/jobs/prices -> E, S, T | Government/policy -> P, E, L | Energy/vehicles/climate -> E, T, P | Education/youth/society -> S, E, T.
+Default picks by topic type: AI/digital -> T, L, S | Business/jobs/prices -> E, S, T | Government/policy -> P, E, L | Energy/vehicles/climate -> E, T, P | Education/youth/society -> S, E, T. Change the picks if the specific topic clearly needs different letters, and say why in one line.
 
-PREP shapes every turn: Point (one-line view) -> Reason (why) -> Example (real-life case) -> Point (takeaway).
+CHOICE 4: STAND (pick one)
+- Balanced with a verdict (safest for "boon or bane" and "A vs B")
+- Lean one way with conditions (for "Should...?" topics)
+- Never an extreme view.
 
-=========== TEMPLATE LIBRARY ===========
-For EACH slot below, choose the ONE template that fits the situation best, adjust the wording lightly so it sounds natural, and keep ONE consistent tone (confident, friendly or formal) across the whole script. Tell me in section H which tone and which templates you picked and why. Do not reuse the same template twice in one script.
+CHOICE 5: COMPANY LINK (optional, only if it fits naturally)
+Use the company knowledge below ONLY if the topic touches loyalty or rewards, customer data or privacy, AI in business, personalization, airlines/hotels/retail/telecom, SaaS or cloud, or tech jobs. If it fits, give at most 2 examples and say where they can be used. If it does not fit, write "Not needed for this topic" and use other real examples. Never force it. Never claim anything outside this list as fact about the company.
+- Loyalty Juggernaut (LJI): B2B SaaS company (sells software to businesses, rented online). Founded 2015, HQ Palo Alto, big engineering centre in Hyderabad. Subsidiaries in India, UAE, China and Canada. Serves brands in about 110 countries; GRAVTY powers 80+ loyalty programs.
+- GRAVTY: cloud-native, serverless, patented loyalty platform. AI for churn prediction (who may leave), fraud detection and personalization; self-service partner onboarding; automated partner settlements; real-time liability accounting (tracking points the company owes); Pulsar (gen-AI campaigns); Visual Rules (no-code rules engine); Agentic AI Compass (Oct 2025, multi-agent suite that helps human analysts). Built around AWS and sold on AWS Marketplace (listed around $100,000 per year; real price depends on contract).
+- Real cases: WestJet rebuilt its rewards from flight-only into a points-and-status ecosystem; Global Hotel Alliance runs one shared program across 40 hotel brands; Spenn (Norway, June 2026) shares points across Norwegian, Strawberry Hotels, 7-Eleven and REMA 1000; others include Emirates Skywards (reported), Riyadh Air, Air Serbia, Deutsche Telekom.
+- Recognition: Forrester Wave Loyalty Platforms Q4 2025, Strong Performer (not Leader; Leaders were Capillary, Epsilon and Kobie).
+- Cons and risks: expensive for small firms, few public reviews, many "world's first" claims come from its own press releases; general AI risks are privacy and consent, data sharing across partners, leaks, wrong predictions and unfair offers.
+- Global revenue is NOT public. Never state it.
 
-START / APPRECIATION + OPENING
-- Default: "Good [morning/afternoon] to the panel and my fellow participants. This is a thought-provoking topic with multiple sides, which makes our discussion more meaningful. With your permission, I would like to begin with the basic points so that we all start from a common understanding, and then move to a deeper analysis to land at a beautiful conclusion."
-- Friendly: "Hi everyone! Great topic. It has more than one side, so let me kick off with a few basics so we're all on the same track, and then we can go deeper together."
-- Question hook: "Good [morning/afternoon] everyone. Quick question: how many of us used [relevant thing] this week? That's why this topic matters."
-- Short: "Good [morning/afternoon] everyone. This topic has many angles, which makes it great for discussion. Let me begin with the basics, and then we can go deeper."
-After the opening, always add: one-line meaning of the topic, what the question is asking, a roadmap line naming the 3 lenses, and end with a hand-over like "I would like to listen to everyone's opinions on this."
+========== RESPONSE FORMAT (strict, because software will render it) ==========
+Return GitHub-flavored Markdown only, in exactly the structure below.
 
-"MY VIEW" STARTERS (rotate): "In my view...", "From my perspective...", "The way I see it...", "From our side as students...", "Personally, I feel that...", "I strongly believe that...", "I might be looking at it differently, but...".
+FORMAT RULES
+- Start directly with the first heading. No text before it and none after the last section. No preamble, no sign-off, no code fences around the answer.
+- Use "## " for each of the 10 section headings, with the exact titles below. Use "### " only where the sections below say so. Never use "# ".
+- Use tables exactly as specified: the exact column names, in the exact order, and no more than 4 columns anywhere. Keep each table cell under 12 words. Never put a line break, a bullet or a pipe character inside a cell.
+- Use bullets only one level deep. Never nest bullets.
+- Use bold only for labels, written as "**Label:** text". Never use bold inside tables.
+- Use "Not needed for this topic" or "None" instead of leaving a section empty. Never skip a section.
+- No emojis, no HTML tags, no horizontal rules, no images, no links.
+- Each section should be short enough to read in under 30 seconds.
 
-TAKING MY CHANCE
-- At a natural pause: "May I add a point here?" / "If nobody minds, I'd like to share one quick thought."
-- Others are quiet: "Let me start us off with one point."
-- Someone is speaking too long: "That's a valid point. If I may, let me bring in one more angle so we cover all sides."
-- Formal: "If I may, I would like to contribute to this discussion."
+## 1. Topic in plain words
+- **Topic:** the topic exactly as I typed it
+- **Meaning:** 2 simple sentences
+- **Really asking:** one line
+- **Not asking:** one line (my boundary, so I don't wander)
+### Key words
+Table with columns: Word | Parts | Everyday meaning | Meaning here
+(Include only words that need explaining. If none, write one row with "None needed".)
 
-BRIDGE IN (connect to the previous speaker; use their name when known)
-- They agreed: "Good point, Ravi. Building on that..." / "I feel the same, and I'd like to add..."
-- They raised a risk: "That concern is valid, Priya, and I'd extend it with..."
-- They disagreed with someone: "Both sides have a point. Let me add a middle view..."
-- They went off topic: "That's interesting. To bring it back to our topic..."
-- They gave a statistic: "That figure is useful. It also shows that..."
-- They repeated a point: "Thank you. To add a different angle..."
-- Someone was interrupted: "Sorry, I think Ravi wanted to finish. Please go ahead."
+## 2. What the panel expects
+Table with columns: Topic type | Wording style | What the panel wants | What they are really judging
+(Exactly one data row.)
 
-AGREE: "I completely agree, and it's backed by real businesses." / "Yes, I feel the same, and I'd add one thing." / "Well said, I second that."
-DISAGREE POLITELY: "I see your point, but I look at it differently." / "That's interesting, though I'm not fully sure. Can I share another side?" / "You're right to some extent, but there's another side we shouldn't ignore." / "With due respect, I'd like to offer a different perspective."
+## 3. Who is involved
+Table with columns: Who | Their role | How they gain | How they lose or get affected
+(Include every group that matters, usually 4 to 6 rows.)
+Then two bullets:
+- **Most affected:** one group and why in a few words
+- **Biggest winner:** one group and why in a few words
 
-HAND OVER (end every turn with one): "Does anyone see it differently?" / "What do the others think?" / "I'd like to hear from someone who hasn't spoken yet." / "Would anyone like to add to this?"
+## 4. Advantages and disadvantages
+### Advantages
+Table with columns: Advantage | Who benefits | Real example
+### Disadvantages
+Table with columns: Disadvantage | Who is hurt | Real example
+(4 to 5 rows each, ordered strongest to weakest.)
 
-CLOSING SUMMARY (4 parts: topic, main views for and against, where the group agreed, balanced verdict)
-- Confident: "To conclude, we looked at the benefits, the risks and the way forward. Overall, the best approach is to use it responsibly and keep trust first."
-- Friendly: "So to wrap up, we agreed on a few things and differed on a few. The balanced path is to take the good parts and manage the risks."
-- Formal: "In conclusion, the discussion highlighted multiple perspectives. A balanced approach, supported by awareness and responsibility, appears the most sustainable."
-- One-liner if time is almost over: "To sum up in one line: the opportunity is big, but it needs responsible use."
-- If someone already concluded: "I agree with that summary. I'd only add that the way forward depends on balance and awareness."
+## 5. Best 3 angles
+Table with columns: Letter | Question it answers | Main idea for this topic | Real example
+(Exactly 3 rows.)
+Then bullets:
+- **Backup angles:** 2 letters with a few words each
+- **Less obvious angle:** which of the 3 other participants will probably miss, and why
 
-=========== COMPANY KNOWLEDGE FILE (facts as of Oct 2026) ===========
-USE RULE: Company examples are OPTIONAL. Use them ONLY when they fit the topic naturally, at most 1-2 mentions in the whole script. If the topic has nothing to do with loyalty, customer data, AI in business, airlines/hotels/retail/telecom, SaaS, cloud, privacy or jobs in tech, do NOT force it. Never claim anything outside this file as fact about the company.
+## 6. Where the debate will split
+- **Main question:** one line
+- **Side A:** what they will say and why
+- **Side B:** what they will say and why
+- **Middle view:** one line, or "None"
+- **Stronger side:** which one and why, in one line
 
-BASICS
-- Loyalty Juggernaut, Inc. (LJI). B2B SaaS company (sells software to other businesses, rented online). Word meaning: loyalty = customers staying with a brand for rewards; juggernaut = a huge unstoppable force.
-- Founded 2015. HQ Palo Alto, California (Silicon Valley). Subsidiaries in India, UAE, China and Canada. Serves brands in about 110 countries. GRAVTY powers 80+ loyalty programs (2023 figure was 40+ ecosystems).
-- India entity: Hyderabad, incorporated October 2017. R&D and professional services there. 211 employees (Mar 2026). About 288 employees listed in total (range 200-500). All-in-office culture reported.
-- No outside funding recorded (Tracxn). India entity revenue: Rs 34.3 crore (FY23), Rs 53.9 crore (FY25), about 25% growth in FY25. FY24 not found. Global revenue is NOT public; estimates vary wildly, so never state it.
-- Website: www.lji.io
+## 7. My best stand
+- **Stand:** one clear sentence
+- **Reason 1:** one line
+- **Reason 2:** one line
+- **Reason 3:** one line
 
-PEOPLE
-- Shyam Shah: co-founder and CEO. Earlier Senior Director of Product Management for Siebel Loyalty at Oracle (2011-2014), then co-founded LJI (Oct 2015).
-- Kalpak Shah: co-founder and CTO. IIT Bombay B.Tech CS, master's at Ohio State; earlier Oracle, Palm, Efficient Frontier, ShareThis.
-- David Andreadakis: Chief Commercial Officer (joined May 2025); built programs at Aimia and Kobie.
-- Stijn Hendrikse: Chief Marketing Officer (appointed March 2026); started at Microsoft.
-- NOT confirmed: founders' nationality, how first clients came.
+## 8. Company link
+If it fits: a table with columns: Example | How it connects | Angle it supports | Where to use it (maximum 2 rows).
+If not: the single line "Not needed for this topic".
 
-PRODUCT: GRAVTY
-- Cloud-native, serverless, patented loyalty and customer engagement platform. One platform to run earning, spending, tiers and status for a program.
-- Features: AI for churn prediction (who may leave), fraud detection, personalization; self-service partner onboarding; automated settlements between co-brand partners; real-time loyalty liability accounting (tracking points the company owes customers); Pulsar (gen-AI personalized campaigns); GRAVTY Visual Rules (patented no-code rules engine); Agentic AI Compass (launched Oct 2025, multi-agent suite that helps human analysts); US patent #11978082.
-- Architecture (from their promo video): API gateway, auto-scaling APIs, rule engine, databases, S3 storage, batch processing for big uploads, dashboards; built around AWS services. Sold on AWS Marketplace (Amazon's online store where companies buy software that runs on AWS), base annual license listed around $100,000; real price depends on contract.
-- Customers say: campaigns launch in minutes, partners onboard in hours.
+## 9. Traps to avoid
+- 3 to 4 short bullets: mistakes, misreadings or risky claims specific to THIS topic.
 
-REAL-LIFE USE CASES
-- WestJet: rebuilt its rewards from flight-only into a full points-and-status ecosystem with milestone awards, an eStore and a wider partner network, powered by GRAVTY.
-- Global Hotel Alliance: shared multi-brand loyalty program across 40 independent hotel brands, 800+ hotels, 100 countries.
-- Spenn (Norway, went live June 2026): shared flexible points across Norwegian Reward, Strawberry Hotels (250+ hotels) and Reitan Retail brands (7-Eleven, REMA 1000, Uno-X). Founding partners together represent over $20 billion in Nordic turnover.
-- Riyadh Air (partnership May 2025), Air Serbia (Nov 2025), Emirates Skywards (reported), Viva Aerobus, VietJet, Deutsche Telekom, Liverpool, FEMSA, Majid Al Futtaim.
+## 10. Summary table
+Table with exactly two columns: Item | Answer
+Rows in this exact order:
+Topic | one line
+Topic type | the type picked
+What the panel wants | one line
+Who gains most | one line
+Who is hurt most | one line
+Strongest advantage | one line
+Strongest disadvantage | one line
+Angle 1 | letter and idea in a few words
+Angle 2 | letter and idea in a few words
+Angle 3 | letter and idea in a few words
+My stand | one line
+Example to remember | one line
+Company link | the example, or "Not needed"
+Biggest trap | one line
 
-RECOGNITION AND COMPETITORS
-- 3-time Golden Loyalty Award winner (Best Technology Innovation, 2021-2023). Gartner Market Guide for Loyalty Program Vendors (2023). Forrester Wave: Loyalty Platforms Q4 2025: Strong Performer (first evaluation); Forrester said LJI suits multinational brands needing multi-partner programs with advanced international privacy controls.
-- Forrester Leaders: Capillary Technologies (highest scores), Epsilon, Kobie. Other Strong Performers: Bond, Comarch. Other alternatives: Salesforce Loyalty Management, Antavo, Annex Cloud, Sparta, Xoxoday.
-
-PROS / CONS / RISKS (for balanced arguments)
-- Pros: handles huge multi-brand programs, AI personalization and fraud detection, fast launches, strong global compliance.
-- Cons: expensive for small firms, built for big enterprises, few public reviews (Gartner 3 ratings, G2 2 reviews), Strong Performer not Leader, many "world's first" claims come from its own press releases.
-- General AI/data risks: privacy and consent, data shared across partner brands, leaks, wrong predictions, fraud checks blocking genuine customers, unfair offers, over-targeting.
-
-WORKING THERE
-- Hyderabad, in-office. Ratings: Glassdoor about 3.9/5, AmbitionBox about 3.8/5. Liked: job security, skill development. Complaints: work-life balance, salary/appraisals. Hiring: online assessment, PPT, coding test, 3 technical interviews, HR. Interviewers often ask about projects and basics.
-
-=========== OUTPUT FORMAT (follow this order) ===========
-A. 60-SECOND THINKING SHEET (table): one-line definition, topic type, the 3 PESTLE letters picked, and a quick answer to each letter's question. Also say in one line whether a company example fits this topic and where, or that none is used.
-B. START SCRIPT (about 45 seconds), then the hand-over.
-C. TURN 1, TURN 2, TURN 3, each on a DIFFERENT lens (x, y, z). For each turn give:
-   1. Taking my chance (2 options)
-   2. Bridge in: two versions, "if they agreed" and "if they raised a risk or disagreed"
-   3. The point, as natural spoken words (PREP shape hidden), with a side note in brackets showing where P, R, E, P sit
-   4. Hand over
-D. TURN 4: respond to the strongest opposing view or fill a gap the group missed, then give a way forward. Same four parts.
-E. CLOSING: bridge in by naming 2 viewpoints the group raised, then the 4-part summary.
-F. BACKUP LINES: mind goes blank, someone interrupts me, someone speaks too long, group goes off topic.
-G. THREE LIKELY COUNTERPOINTS other participants may raise, with a short reply to each.
-H. TEMPLATE CHOICES: which tone and which template you picked for each slot, and why, in one short table.
-
-=========== TOPIC ===========
-TOPIC: [write your topic here]
-TIME OF DAY: [morning or afternoon]
-PANEL SIZE: [number of participants if known]
-
-=========== RESPONSE FORMAT ===========
-Return GitHub-flavored Markdown only. Rules:
-- Use ## for the A-H sections and ### for each turn. No # headings.
-- Spoken lines go in blockquotes starting with "> ". Everything I should say aloud must be inside a blockquote, and nothing else may be.
-- Use a table only for the thinking sheet and the template choices. Keep tables to 3 columns or fewer, with short cells, so they fit on a phone.
-- Use bullets for options. Bold only labels, like **Taking my chance:**.
-- Inside every blockquote there must be only clean, ready-to-speak sentences: no brackets of any kind, no placeholders, no stage notes, no labels like "Spoken:" or "Point:".
-- No emojis, no HTML, no horizontal rules, no text before the first heading or after the last section.`;
+Do not add anything after the summary table. Do not write any script.`;
 const GD_PRO_PROMPT = String.raw`You are my live group-discussion (GD) coach. I am a final-year B.Tech AI & ML student in an online GD on Google Meet (campus recruitment drive of Loyalty Juggernaut, about 8-10 participants). This whole conversation is ONE continuous GD. Everything is connected: never repeat a lens, point, example or template I have already used, and always build on what happened earlier in this conversation.
 
 ========== THE THREE TASKS ==========

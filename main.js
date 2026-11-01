@@ -938,12 +938,21 @@ async function callAI(provider, apiKey, model, messages, systemPrompt, isTest, s
       const e = await res.json().catch(() => ({}));
       const msg = e.error?.message || '';
       if (res.status === 400) throw new Error(`Bad request: ${msg || 'check model name or key'}`);
-      if (res.status === 403) throw new Error('API key invalid or Gemini API not enabled in your Google project.');
+      if (res.status === 403) throw new Error(/leaked/i.test(msg)
+        ? 'Google has disabled this API key because it was reported as leaked. Create a new key at aistudio.google.com/app/apikey.'
+        : 'API key invalid or Gemini API not enabled in your Google project.');
+      if (res.status === 404) throw new Error(`Model "${model}" is not available for this key. Pick another Gemini model.`);
+      if (res.status === 503) throw new Error('Gemini is busy right now (high demand). Try again, or switch model.');
       if (res.status === 429) throw new Error('Quota exceeded. Check aistudio.google.com for limits.');
       throw new Error(`HTTP ${res.status}: ${msg}`);
     }
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    // Some models (e.g. Gemma 4) send their reasoning as a leading "thought" part;
+    // only the non-thought parts are the answer.
+    const text = (data.candidates?.[0]?.content?.parts || [])
+      .filter(p => !p.thought && typeof p.text === 'string')
+      .map(p => p.text)
+      .join('');
     if (!text) throw new Error('Empty response — model may have blocked the message.');
     // Gemini doesn't expose a remaining-quota response header, so rateLimit stays null
     // here and the renderer falls back to context-window tracking for this provider.
